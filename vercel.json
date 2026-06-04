@@ -1,0 +1,11 @@
+{
+  "installCommand": "cd metadesk-frontend && npm ci",
+  "buildCommand": "cd metadesk-frontend && npm run build",
+  "outputDirectory": "metadesk-frontend/dist",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
