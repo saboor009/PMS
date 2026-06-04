@@ -1,0 +1,116 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+:root {
+  --primary: #2F85C8;
+  --primary-light: #5BB8E8;
+  --primary-dark: #1A4A8A;
+  --primary-50: #EFF6FF;
+  --primary-100: #DBEAFE;
+  --primary-200: #BAD6F4;
+
+  --page-bg: #F4F7FE;
+  --sidebar-bg: #FFFFFF;
+  --sidebar-border: #EAECF0;
+  --card-bg: #FFFFFF;
+  --card-border: #E8EFFC;
+  --card-shadow: 0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04);
+  --card-shadow-md: 0 4px 16px rgba(16,24,40,0.08);
+
+  --text-primary: #101828;
+  --text-secondary: #475467;
+  --text-muted: #98A2B3;
+
+  --nav-hover-bg: #F8FAFF;
+  --nav-active-bg: #EFF6FF;
+  --nav-active-color: #2F85C8;
+
+  --success: #12B76A;
+  --warning: #F79009;
+  --danger: #F04438;
+  --purple: #7F56D9;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+body { background: var(--page-bg); color: var(--text-primary); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #D0D5DD; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+
+/* Nav items */
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: 8px;
+  color: var(--text-secondary); font-size: 13.5px; font-weight: 500;
+  text-decoration: none; transition: all 0.15s ease;
+  cursor: pointer; white-space: nowrap;
+}
+.nav-item:hover { background: var(--nav-hover-bg); color: var(--text-primary); }
+.nav-item.active { background: var(--nav-active-bg); color: var(--nav-active-color); font-weight: 600; }
+
+/* Cards */
+.card {
+  background: var(--card-bg);
+  border-radius: 12px;
+  border: 1px solid var(--card-border);
+  box-shadow: var(--card-shadow);
+}
+
+/* Primary button */
+.btn-primary {
+  background: var(--primary);
+  color: #fff; border: none; border-radius: 8px;
+  padding: 9px 16px; font-weight: 600; font-size: 13.5px;
+  cursor: pointer; transition: all 0.15s;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: inherit;
+}
+.btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(47,133,200,0.3); }
+.btn-primary:active { transform: translateY(0); }
+.btn-primary:disabled { opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none; }
+
+/* Secondary button */
+.btn-secondary {
+  background: #fff; color: var(--text-primary);
+  border: 1px solid #D0D5DD; border-radius: 8px;
+  padding: 9px 16px; font-weight: 600; font-size: 13.5px;
+  cursor: pointer; transition: all 0.15s;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: inherit;
+}
+.btn-secondary:hover { background: #F9FAFB; border-color: #98A2B3; }
+
+/* Input */
+.input-field {
+  width: 100%; padding: 9px 13px;
+  border: 1px solid #D0D5DD; border-radius: 8px;
+  font-size: 13.5px; color: var(--text-primary);
+  font-family: inherit; outline: none; background: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.input-field:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(47,133,200,0.1); }
+.input-field::placeholder { color: var(--text-muted); }
+
+/* Stat card hover */
+.stat-card { transition: transform 0.15s, box-shadow 0.15s; cursor: pointer; }
+.stat-card:hover { transform: translateY(-2px); box-shadow: var(--card-shadow-md) !important; }
+
+/* Table */
+.data-table { width: 100%; border-collapse: collapse; }
+.data-table th { padding: 11px 16px; text-align: left; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; background: #F9FAFB; border-bottom: 1px solid var(--card-border); }
+.data-table td { padding: 13px 16px; border-bottom: 1px solid #F2F4F7; font-size: 13.5px; color: var(--text-primary); }
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tbody tr:hover td { background: #FAFBFF; }
+.data-table tr { transition: background 0.1s; }
