@@ -83,8 +83,11 @@ export const DEFAULT_PERMISSIONS = {
 
 DEFAULT_PERMISSIONS.owner = DEFAULT_PERMISSIONS.ceo
 
-export const normalizeRole = role => role === 'owner' ? 'ceo' : (role || 'employee')
-export const roleLevel = role => ROLE_LEVEL[role] || ROLE_LEVEL.employee
+export const normalizeRole = role => {
+  const normalized = String(role || 'employee').trim().toLowerCase()
+  return normalized === 'owner' ? 'ceo' : normalized
+}
+export const roleLevel = role => ROLE_LEVEL[normalizeRole(role)] || ROLE_LEVEL.employee
 export const hasRoleAtLeast = (user, role) => roleLevel(user?.role) >= roleLevel(role)
 export const roleLabel = role => ROLE_LABEL[role] || ROLE_LABEL.employee
 

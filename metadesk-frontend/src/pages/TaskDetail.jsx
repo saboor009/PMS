@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Calendar, CheckCircle2, Clock, FileText, FolderKanban, Paperclip, Plus, Upload, UserCircle } from 'lucide-react'
+import { ArrowLeft, Calendar, CheckCircle2, Clock, FileText, FolderKanban, Paperclip, Plus, Trash2, Upload, UserCircle, X } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { format, formatDistanceToNow, isPast } from 'date-fns'
 import api from '../services/api'
@@ -8,6 +8,7 @@ import Avatar, { AvatarGroup } from '../components/ui/Avatar'
 import { PriorityBadge, StatusBadge } from '../components/ui/Badge'
 import { PageLoader } from '../components/ui/Spinner'
 import EmptyState from '../components/ui/EmptyState'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 import toast from 'react-hot-toast'
 import { can } from '../utils/accessControl'
 
@@ -17,15 +18,20 @@ export default function TaskDetail() {
   const { user } = useAuth()
   const [task, setTask] = useState(null)
   const [files, setFiles] = useState([])
+  const [users, setUsers] = useState([])
+  const [assigneeToAdd, setAssigneeToAdd] = useState('')
   const [loading, setLoading] = useState(true)
   const [subtaskTitle, setSubtaskTitle] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
-    api.get(`/tasks/${id}`)
-      .then(r => {
-        setTask(r.data.task)
-        setFiles(r.data.files || [])
+    Promise.all([api.get(`/tasks/${id}`), api.get('/users')])
+      .then(([taskRes, usersRes]) => {
+        setTask(taskRes.data.task)
+        setFiles(taskRes.data.files || [])
+        setUsers(usersRes.data.users || [])
       })
       .catch(console.error)
       .finally(() => setLoading(false))
@@ -85,6 +91,42 @@ export default function TaskDetail() {
     }
   }
 
+  const addAssignee = async e => {
+    e.preventDefault()
+    if (!assigneeToAdd) return
+    try {
+      const res = await api.post(`/tasks/${id}/assignees`, { userId: assigneeToAdd })
+      setTask(prev => ({ ...prev, ...res.data.task }))
+      setAssigneeToAdd('')
+      toast.success('Assignee added')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to add assignee')
+    }
+  }
+
+  const removeAssignee = async userId => {
+    try {
+      await api.delete(`/tasks/${id}/assignees/${userId}`)
+      setTask(prev => ({ ...prev, assignedTo: (prev.assignedTo || []).filter(member => member._id !== userId) }))
+      toast.success('Assignee removed')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to remove assignee')
+    }
+  }
+
+  const deleteTask = async () => {
+    setDeleting(true)
+    try {
+      await api.delete(`/tasks/${id}`)
+      toast.success('Task deleted')
+      navigate('/tasks')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete task')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   if (loading) return <PageLoader />
   if (!task) return <EmptyState icon={CheckCircle2} title="Task not found" description="This task is unavailable or you do not have access." />
 
@@ -93,6 +135,9 @@ export default function TaskDetail() {
   const completion = subtasks.length ? Math.round((doneSubtasks / subtasks.length) * 100) : 0
   const dueIsPast = task.dueDate && isPast(new Date(task.dueDate)) && task.status !== 'done'
   const canCompleteTasks = can(user, 'assignTasks')
+  const canAssignTasks = can(user, 'assignTasks')
+  const canDeleteTasks = can(user, 'deleteTasks')
+  const availableAssignees = users.filter(member => !(task.assignedTo || []).some(existing => existing._id === member._id))
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -112,12 +157,19 @@ export default function TaskDetail() {
               {task.description || 'No description added yet.'}
             </p>
           </div>
-          <select value={task.status} onChange={e => updateStatus(e.target.value)} style={{ border: '1.5px solid #DBEAFE', background: '#fff', color: '#101828', borderRadius: 9, padding: '8px 10px', fontSize: 12.5, fontWeight: 700, outline: 'none', cursor: 'pointer', flexShrink: 0 }}>
-            <option value="todo">To Do</option>
-            <option value="in_progress">In Progress</option>
-            <option value="review">In Review</option>
-            {canCompleteTasks && <option value="done">Done</option>}
-          </select>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <select value={task.status} onChange={e => updateStatus(e.target.value)} style={{ border: '1.5px solid #DBEAFE', background: '#fff', color: '#101828', borderRadius: 9, padding: '8px 10px', fontSize: 12.5, fontWeight: 700, outline: 'none', cursor: 'pointer' }}>
+              <option value="todo">To Do</option>
+              <option value="in_progress">In Progress</option>
+              <option value="review">In Review</option>
+              {canCompleteTasks && <option value="done">Done</option>}
+            </select>
+            {canDeleteTasks && (
+              <button onClick={() => setConfirmDeleteOpen(true)} title="Delete task" style={{ width: 36, height: 36, borderRadius: 9, border: '1px solid #FEE2E2', background: '#FFF1F2', color: '#EF4444', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                <Trash2 size={16} />
+              </button>
+            )}
+          </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(150px, 1fr))', gap: 12, marginTop: 20 }}>
@@ -198,6 +250,31 @@ export default function TaskDetail() {
               <p style={{ margin: '0 0 10px', fontSize: 11.5, color: '#98A2B3', fontWeight: 700 }}>Assignees</p>
               {task.assignedTo?.length ? <AvatarGroup users={task.assignedTo} size={32} max={6} /> : <p style={{ margin: 0, color: '#98A2B3', fontSize: 13 }}>No assignees</p>}
             </div>
+            {canAssignTasks && (
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #EEF2F7' }}>
+                <form onSubmit={addAssignee} style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  <select value={assigneeToAdd} onChange={e => setAssigneeToAdd(e.target.value)} style={{ flex: 1, minWidth: 0, border: '1.5px solid #DBEAFE', borderRadius: 9, padding: '8px 10px', fontSize: 12.5, color: '#344054', outline: 'none', background: '#fff' }}>
+                    <option value="">Add assignee...</option>
+                    {availableAssignees.map(member => <option key={member._id} value={member._id}>{member.name}</option>)}
+                  </select>
+                  <button type="submit" className="btn-primary" style={{ padding: '8px 10px' }}><Plus size={14} /></button>
+                </form>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {(task.assignedTo || []).map(member => (
+                    <div key={member._id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 0', borderTop: '1px solid #F2F4F7' }}>
+                      <Avatar name={member.name} avatar={member.avatar} size={28} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: '#101828', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{member.name}</p>
+                        <p style={{ margin: '2px 0 0', fontSize: 11, color: '#98A2B3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{member.designation || 'Assignee'}</p>
+                      </div>
+                      <button onClick={() => removeAssignee(member._id)} title="Remove assignee" style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #FEE2E2', background: '#fff', color: '#F04438', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {task.project && (
@@ -221,6 +298,16 @@ export default function TaskDetail() {
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        onClose={() => setConfirmDeleteOpen(false)}
+        onConfirm={deleteTask}
+        title="Delete Task"
+        message={`Delete "${task.title}"?`}
+        confirmLabel="Delete"
+        danger
+        loading={deleting}
+      />
     </div>
   )
 }

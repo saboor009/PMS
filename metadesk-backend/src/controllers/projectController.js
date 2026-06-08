@@ -56,13 +56,15 @@ export const getProject = async (req, res, next) => {
 
 export const createProject = async (req, res, next) => {
   try {
-    const { title, description, status, priority, startDate, deadline, tags, coverColor } = req.body
+    const { title, description, status, priority, startDate, deadline, tags, coverColor, members } = req.body
+    const memberIds = [...new Set([req.user._id.toString(), ...((members || []).filter(Boolean))])]
     const project = await Project.create({
       title, description, status, priority, startDate, deadline, tags, coverColor,
       owner: req.user._id,
-      members: [req.user._id],
+      members: memberIds,
     })
     await project.populate('owner', 'name avatarStyleStyle username')
+    await project.populate('members', 'name avatarStyleStyle username designation')
 
     await ActivityLog.create({ project: project._id, user: req.user._id, action: 'created the project', targetType: 'project', targetId: project._id, targetTitle: project.title })
 

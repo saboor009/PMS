@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search, FolderKanban, Calendar, Users } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { Plus, Search, FolderKanban, Calendar, Users, Trash2 } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import api from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import { can } from '../utils/accessControl'
@@ -10,6 +10,7 @@ import Modal from '../components/ui/Modal'
 import { Input, Select } from '../components/ui/Input'
 import { PageLoader } from '../components/ui/Spinner'
 import EmptyState from '../components/ui/EmptyState'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 
@@ -21,13 +22,15 @@ export default function Projects() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
-  const [showCreate, setShowCreate] = useState(false)
+  const [manualCreateOpen, setManualCreateOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleting, setDeleting] = useState(false)
   const { user } = useAuth()
-  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const canCreateProjects = can(user, 'createProjects')
+  const showCreate = manualCreateOpen || (searchParams.get('create') === '1' && canCreateProjects)
 
   const fetchProjects = () => {
-    setLoading(true)
     const params = new URLSearchParams()
     if (search) params.set('search', search)
     if (statusFilter !== 'all') params.set('status', statusFilter)
@@ -35,6 +38,26 @@ export default function Projects() {
   }
 
   useEffect(() => { fetchProjects() }, [search, statusFilter])
+
+  const closeCreate = () => {
+    setManualCreateOpen(false)
+    if (searchParams.get('create')) setSearchParams({})
+  }
+
+  const deleteProject = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await api.delete(`/projects/${deleteTarget._id}`)
+      setProjects(prev => prev.filter(project => project._id !== deleteTarget._id))
+      setDeleteTarget(null)
+      toast.success('Project deleted')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete project')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -53,23 +76,33 @@ export default function Projects() {
             ))}
           </div>
         </div>
-        {canCreateProjects && <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={15} /> New Project</button>}
+        {canCreateProjects && <button onClick={() => setManualCreateOpen(true)} className="btn-primary"><Plus size={15} /> New Project</button>}
       </div>
 
       {loading ? <PageLoader /> : projects.length === 0 ? (
-        <EmptyState icon={FolderKanban} title="No projects found" description={search ? 'Try a different search.' : 'Create your first project.'} action={canCreateProjects && <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus size={14} /> New Project</button>} />
+        <EmptyState icon={FolderKanban} title="No projects found" description={search ? 'Try a different search.' : 'Create your first project.'} action={canCreateProjects && <button onClick={() => setManualCreateOpen(true)} className="btn-primary"><Plus size={14} /> New Project</button>} />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 16 }}>
-          {projects.map(p => <ProjectCard key={p._id} project={p} />)}
+          {projects.map(p => <ProjectCard key={p._id} project={p} canDelete={can(user, 'deleteProjects')} onDelete={() => setDeleteTarget(p)} />)}
         </div>
       )}
 
-      {showCreate && <CreateProjectModal onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); fetchProjects() }} />}
+      {showCreate && <CreateProjectModal onClose={closeCreate} onCreated={() => { closeCreate(); fetchProjects() }} />}
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={deleteProject}
+        title="Delete Project"
+        message={`Delete "${deleteTarget?.title || 'this project'}"? This will also remove its tasks from active views.`}
+        confirmLabel="Delete"
+        danger
+        loading={deleting}
+      />
     </div>
   )
 }
 
-function ProjectCard({ project: p }) {
+function ProjectCard({ project: p, canDelete, onDelete }) {
   const navigate = useNavigate()
 
   return (
@@ -81,7 +114,18 @@ function ProjectCard({ project: p }) {
       <div style={{ padding: '16px 18px 18px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
           <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#0F1E3D', lineHeight: 1.3 }}>{p.title}</h3>
-          <StatusBadge status={p.status} style={{ marginLeft: 8, flexShrink: 0 }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginLeft: 8, flexShrink: 0 }}>
+            <StatusBadge status={p.status} />
+            {canDelete && (
+              <button
+                onClick={e => { e.stopPropagation(); onDelete() }}
+                title="Delete project"
+                style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #FEE2E2', background: '#fff', color: '#EF4444', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+              >
+                <Trash2 size={13} />
+              </button>
+            )}
+          </div>
         </div>
         {p.description && <p style={{ margin: '0 0 12px', fontSize: 12.5, color: '#6B7280', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{p.description}</p>}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
@@ -108,15 +152,25 @@ function ProjectCard({ project: p }) {
 
 function CreateProjectModal({ onClose, onCreated }) {
   const [form, setForm] = useState({ title: '', description: '', priority: 'medium', status: 'planning', deadline: '', coverColor: COLORS[0] })
+  const [users, setUsers] = useState([])
+  const [selectedMembers, setSelectedMembers] = useState([])
   const [loading, setLoading] = useState(false)
   const set = f => e => setForm(p => ({ ...p, [f]: e.target.value }))
+
+  useEffect(() => {
+    api.get('/users').then(r => setUsers(r.data.users || [])).catch(() => {})
+  }, [])
+
+  const toggleMember = id => {
+    setSelectedMembers(prev => prev.includes(id) ? prev.filter(memberId => memberId !== id) : [...prev, id])
+  }
 
   const handleSubmit = async e => {
     e.preventDefault()
     if (!form.title.trim()) return toast.error('Title is required')
     setLoading(true)
     try {
-      await api.post('/projects', form)
+      await api.post('/projects', { ...form, members: selectedMembers })
       toast.success('Project created!')
       onCreated()
     } catch (err) { toast.error(err.response?.data?.message || 'Failed to create') } finally { setLoading(false) }
@@ -139,6 +193,23 @@ function CreateProjectModal({ onClose, onCreated }) {
           </Select>
         </div>
         <Input label="Deadline" type="date" value={form.deadline} onChange={set('deadline')} />
+        <div>
+          <label style={{ fontSize: 13, fontWeight: 600, color: '#1A4A8A', display: 'block', marginBottom: 8 }}>Project Members</label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(190px,1fr))', gap: 8, maxHeight: 170, overflowY: 'auto', paddingRight: 2 }}>
+            {users.map(member => {
+              const selected = selectedMembers.includes(member._id)
+              return (
+                <button type="button" key={member._id} onClick={() => toggleMember(member._id)} style={{ display: 'flex', alignItems: 'center', gap: 8, border: `1.5px solid ${selected ? '#2F85C8' : '#DBEAFE'}`, background: selected ? '#EFF6FF' : '#fff', borderRadius: 10, padding: 9, cursor: 'pointer', textAlign: 'left' }}>
+                  <span style={{ width: 18, height: 18, borderRadius: 6, border: `1.5px solid ${selected ? '#2F85C8' : '#BAD6F4'}`, background: selected ? '#2F85C8' : '#fff', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 900, flexShrink: 0 }}>{selected ? 'x' : ''}</span>
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#0F1E3D', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{member.name}</span>
+                    <span style={{ display: 'block', fontSize: 11, color: '#667085', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{member.designation || member.email}</span>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
         <div>
           <label style={{ fontSize: 13, fontWeight: 600, color: '#1A4A8A', display: 'block', marginBottom: 8 }}>Cover Color</label>
           <div style={{ display: 'flex', gap: 8 }}>

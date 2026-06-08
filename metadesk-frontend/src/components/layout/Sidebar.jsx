@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, MessageSquare,
   Bell, Users, CalendarCheck, BarChart2, UserCircle, Settings,
-  LogOut, PanelLeftClose, PanelLeftOpen, X,
+  LogOut, PanelLeftClose, PanelLeftOpen, PlusCircle, X,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { can, roleLabel } from '../../utils/accessControl'
@@ -81,8 +81,10 @@ function NavItem({ icon: Icon, label, path, badgeCount = 0, collapsed, onNavigat
 
 export default function Sidebar({ collapsed, mobile = false, open = false, onToggle, onNavigate, badges = {} }) {
   const { user, logout } = useAuth()
+  const navigate = useNavigate()
 
   const allNav = can(user, 'viewEmployeeSummary') ? [...MAIN_NAV, ...MGR_NAV] : MAIN_NAV
+  const canCreateProjects = can(user, 'createProjects')
   const role = ROLE_STYLE[user?.role] || ROLE_STYLE.employee
   const initials = user?.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'MG'
 
@@ -158,6 +160,23 @@ export default function Sidebar({ collapsed, mobile = false, open = false, onTog
             />
           ))}
         </div>
+
+        {canCreateProjects && (
+          <button
+            onClick={() => { navigate('/projects?create=1'); onNavigate?.() }}
+            title={collapsed ? 'Create project' : undefined}
+            style={{
+              width: '100%', marginTop: 10, border: '1px solid #BBD7F2',
+              background: '#EFF6FF', color: '#1D6EB0', borderRadius: 10,
+              padding: collapsed ? '10px 0' : '10px 12px', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start',
+              gap: 9, fontSize: 13, fontWeight: 800, fontFamily: 'inherit',
+            }}
+          >
+            <PlusCircle size={17} />
+            {!collapsed && <span>Create Project</span>}
+          </button>
+        )}
 
         <div style={{ height: 1, background: '#F2F4F7', margin: '12px 4px' }} />
 

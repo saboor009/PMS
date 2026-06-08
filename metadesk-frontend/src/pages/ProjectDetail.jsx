@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { ArrowLeft, Calendar, CheckSquare, FolderKanban, MessageSquare, Send, Users } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { ArrowLeft, Calendar, CheckSquare, FolderKanban, MessageSquare, Plus, Send, Trash2, Users, X } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { format } from 'date-fns'
 import api from '../services/api'
@@ -9,7 +9,9 @@ import { AvatarGroup } from '../components/ui/Avatar'
 import { PriorityBadge, StatusBadge } from '../components/ui/Badge'
 import { PageLoader } from '../components/ui/Spinner'
 import EmptyState from '../components/ui/EmptyState'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 import toast from 'react-hot-toast'
+import { can } from '../utils/accessControl'
 
 export default function ProjectDetail() {
   const { id } = useParams()
@@ -18,29 +20,42 @@ export default function ProjectDetail() {
   const [project, setProject] = useState(null)
   const [tasks, setTasks] = useState([])
   const [comments, setComments] = useState([])
+  const [users, setUsers] = useState([])
+  const [memberToAdd, setMemberToAdd] = useState('')
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(true)
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
-  useEffect(() => {
+  const fetchProjectData = useCallback(() => {
     Promise.all([
       api.get(`/projects/${id}`),
       api.get(`/tasks?project=${id}`),
       api.get(`/comments?project=${id}`),
+      api.get('/users'),
     ])
-      .then(([projectRes, tasksRes, commentsRes]) => {
+      .then(([projectRes, tasksRes, commentsRes, usersRes]) => {
         setProject(projectRes.data.project)
         setTasks(tasksRes.data.tasks || [])
         setComments(commentsRes.data.comments || [])
+        setUsers(usersRes.data.users || [])
       })
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [id])
+
+  useEffect(() => {
+    fetchProjectData()
+  }, [fetchProjectData])
 
   if (loading) return <PageLoader />
   if (!project) return <EmptyState icon={FolderKanban} title="Project not found" description="This project is unavailable or you do not have access." />
 
   const completed = tasks.filter(t => t.status === 'done').length
   const progress = project.progress ?? (tasks.length ? Math.round((completed / tasks.length) * 100) : 0)
+  const canManageProjects = can(user, 'manageProjects')
+  const canDeleteProjects = can(user, 'deleteProjects')
+  const availableMembers = users.filter(member => !(project.members || []).some(existing => existing._id === member._id))
 
   const sendMessage = async e => {
     e.preventDefault()
@@ -54,6 +69,42 @@ export default function ProjectDetail() {
     }
   }
 
+  const addMember = async e => {
+    e.preventDefault()
+    if (!memberToAdd) return
+    try {
+      const res = await api.post(`/projects/${id}/members`, { userId: memberToAdd })
+      setProject(prev => ({ ...prev, ...res.data.project, owner: res.data.project.owner || prev.owner }))
+      setMemberToAdd('')
+      toast.success('Member added')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to add member')
+    }
+  }
+
+  const removeMember = async userId => {
+    try {
+      await api.delete(`/projects/${id}/members/${userId}`)
+      setProject(prev => ({ ...prev, members: (prev.members || []).filter(member => member._id !== userId) }))
+      toast.success('Member removed')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to remove member')
+    }
+  }
+
+  const deleteProject = async () => {
+    setDeleting(true)
+    try {
+      await api.delete(`/projects/${id}`)
+      toast.success('Project deleted')
+      navigate('/projects')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete project')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       <button onClick={() => navigate('/projects')} style={{ width: 'fit-content', display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'transparent', color: '#2F85C8', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
@@ -64,10 +115,17 @@ export default function ProjectDetail() {
         <div style={{ height: 8, background: project.coverColor || '#2F85C8' }} />
         <div style={{ padding: 24, display: 'grid', gridTemplateColumns: '1fr 280px', gap: 24 }}>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-              <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: '#101828' }}>{project.title}</h1>
-              <StatusBadge status={project.status} />
-              <PriorityBadge priority={project.priority} />
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
+                <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: '#101828' }}>{project.title}</h1>
+                <StatusBadge status={project.status} />
+                <PriorityBadge priority={project.priority} />
+              </div>
+              {canDeleteProjects && (
+                <button onClick={() => setConfirmDeleteOpen(true)} title="Delete project" style={{ width: 36, height: 36, borderRadius: 9, border: '1px solid #FEE2E2', background: '#FFF1F2', color: '#EF4444', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                  <Trash2 size={16} />
+                </button>
+              )}
             </div>
             <p style={{ margin: 0, color: '#475467', fontSize: 14, lineHeight: 1.6 }}>
               {project.description || 'No description added yet.'}
@@ -158,9 +216,46 @@ export default function ProjectDetail() {
           <p style={{ margin: '0 0 10px', fontSize: 12.5, color: '#667085', fontWeight: 700 }}>Team</p>
           <AvatarGroup users={project.members || []} size={30} max={6} />
           {project.owner && <p style={{ margin: '14px 0 0', fontSize: 12.5, color: '#667085' }}>Owner: <strong style={{ color: '#101828' }}>{project.owner.name}</strong></p>}
+          {canManageProjects && (
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #EEF2F7' }}>
+              <form onSubmit={addMember} style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                <select value={memberToAdd} onChange={e => setMemberToAdd(e.target.value)} style={{ flex: 1, minWidth: 0, border: '1.5px solid #DBEAFE', borderRadius: 9, padding: '8px 10px', fontSize: 12.5, color: '#344054', outline: 'none', background: '#fff' }}>
+                  <option value="">Add member...</option>
+                  {availableMembers.map(member => <option key={member._id} value={member._id}>{member.name}</option>)}
+                </select>
+                <button type="submit" className="btn-primary" style={{ padding: '8px 10px' }}><Plus size={14} /></button>
+              </form>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {(project.members || []).map(member => (
+                  <div key={member._id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 0', borderTop: '1px solid #F2F4F7' }}>
+                    <Avatar name={member.name} avatar={member.avatar} size={28} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: '#101828', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{member.name}</p>
+                      <p style={{ margin: '2px 0 0', fontSize: 11, color: '#98A2B3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{member.designation || member.team || 'Member'}</p>
+                    </div>
+                    {member._id !== project.owner?._id && (
+                      <button onClick={() => removeMember(member._id)} title="Remove member" style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #FEE2E2', background: '#fff', color: '#F04438', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        onClose={() => setConfirmDeleteOpen(false)}
+        onConfirm={deleteProject}
+        title="Delete Project"
+        message={`Delete "${project.title}"? This will also remove its tasks from active views.`}
+        confirmLabel="Delete"
+        danger
+        loading={deleting}
+      />
     </div>
   )
 }
