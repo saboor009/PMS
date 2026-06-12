@@ -73,11 +73,11 @@ export default function Tasks() {
   )
 }
 
-function CreateTaskModal({onClose,onCreated}){
+export function CreateTaskModal({onClose,onCreated,initialProjectId=''}){
   const[form,setForm]=useState({title:'',description:'',priority:'medium',dueDate:''})
   const[projects,setProjects]=useState([])
   const[users,setUsers]=useState([])
-  const[project,setProject]=useState('')
+  const[project,setProject]=useState(initialProjectId)
   const[selectedAssignees,setSelectedAssignees]=useState([])
   const[loading,setLoading]=useState(false)
   const{user}=useAuth()

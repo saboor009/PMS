@@ -81,11 +81,22 @@ export const updateProject = async (req, res, next) => {
 
     const fields = ['title', 'description', 'status', 'priority', 'startDate', 'deadline', 'tags', 'progress', 'coverColor']
     fields.forEach(f => { if (req.body[f] !== undefined) project[f] = req.body[f] })
+    if (req.body.owner !== undefined) {
+      if (!hasRoleAtLeast(req.user, 'ceo')) {
+        return res.status(403).json({ success: false, message: 'Only CEO can assign the project manager' })
+      }
+      const ownerId = req.body.owner?.toString()
+      const isProjectMember = project.members.some(member => member.toString() === ownerId)
+      if (!ownerId || !isProjectMember) {
+        return res.status(400).json({ success: false, message: 'Project manager must be a project member' })
+      }
+      project.owner = ownerId
+    }
     if (req.body.status === 'completed' && !project.completedAt) project.completedAt = new Date()
 
     await project.save()
-    await project.populate('owner', 'name avatarStyleStyle username')
-    await project.populate('members', 'name avatarStyleStyle username')
+    await project.populate('owner', 'name avatarStyleStyle username designation')
+    await project.populate('members', 'name avatarStyleStyle username designation team')
 
     await ActivityLog.create({ project: project._id, user: req.user._id, action: 'updated the project', targetType: 'project', targetId: project._id, targetTitle: project.title })
 

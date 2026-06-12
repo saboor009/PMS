@@ -19,6 +19,7 @@ export default function TaskDetail() {
   const [task, setTask] = useState(null)
   const [files, setFiles] = useState([])
   const [users, setUsers] = useState([])
+  const [projects, setProjects] = useState([])
   const [assigneeToAdd, setAssigneeToAdd] = useState('')
   const [loading, setLoading] = useState(true)
   const [subtaskTitle, setSubtaskTitle] = useState('')
@@ -27,11 +28,12 @@ export default function TaskDetail() {
   const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
-    Promise.all([api.get(`/tasks/${id}`), api.get('/users')])
-      .then(([taskRes, usersRes]) => {
+    Promise.all([api.get(`/tasks/${id}`), api.get('/users'), api.get('/projects')])
+      .then(([taskRes, usersRes, projectsRes]) => {
         setTask(taskRes.data.task)
         setFiles(taskRes.data.files || [])
         setUsers(usersRes.data.users || [])
+        setProjects(projectsRes.data.projects || [])
       })
       .catch(console.error)
       .finally(() => setLoading(false))
@@ -44,6 +46,16 @@ export default function TaskDetail() {
       toast.success('Task updated')
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to update')
+    }
+  }
+
+  const updateProject = async projectId => {
+    try {
+      const res = await api.put(`/tasks/${id}`, { project: projectId || null })
+      setTask(prev => ({ ...prev, ...res.data.task }))
+      toast.success(projectId ? 'Task moved to project' : 'Task moved to standalone')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to move task')
     }
   }
 
@@ -277,14 +289,20 @@ export default function TaskDetail() {
             )}
           </div>
 
-          {task.project && (
-            <button onClick={() => navigate(`/projects/${task.project._id}`)} className="card" style={{ padding: 16, border: '1px solid #DBEAFE', background: '#F8FAFF', cursor: 'pointer', textAlign: 'left' }}>
+          <div className="card" style={{ padding: 16, border: '1px solid #DBEAFE', background: '#F8FAFF' }}>
+            <button onClick={() => task.project?._id && navigate(`/projects/${task.project._id}`)} style={{ width: '100%', padding: 0, border: 'none', background: 'transparent', cursor: task.project?._id ? 'pointer' : 'default', textAlign: 'left' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 9, color: '#2F85C8', fontSize: 12, fontWeight: 800, marginBottom: 5 }}>
                 <FolderKanban size={15} /> Project
               </div>
-              <p style={{ margin: 0, fontSize: 13.5, color: '#101828', fontWeight: 700 }}>{task.project.title}</p>
+              <p style={{ margin: 0, fontSize: 13.5, color: '#101828', fontWeight: 700 }}>{task.project?.title || 'Standalone task'}</p>
             </button>
-          )}
+            {canAssignTasks && (
+              <select value={task.project?._id || ''} onChange={e => updateProject(e.target.value)} style={{ width: '100%', marginTop: 12, border: '1.5px solid #DBEAFE', borderRadius: 9, padding: '8px 10px', fontSize: 12.5, color: '#344054', outline: 'none', background: '#fff' }}>
+                <option value="">Standalone task</option>
+                {projects.map(project => <option key={project._id} value={project._id}>{project.title}</option>)}
+              </select>
+            )}
+          </div>
 
           <div className="card" style={{ padding: 18 }}>
             <h2 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 800, color: '#101828' }}>Current User</h2>

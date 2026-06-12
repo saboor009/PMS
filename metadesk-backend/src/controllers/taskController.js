@@ -130,12 +130,20 @@ export const updateTask = async (req, res, next) => {
       if (dueDate !== undefined) task.dueDate = dueDate
       if (estimatedHours !== undefined) task.estimatedHours = estimatedHours
       if (loggedHours !== undefined) task.loggedHours = loggedHours
-      if (project !== undefined) task.project = project || null
+      if (project !== undefined) {
+        if (project) {
+          const targetProject = await Project.findOne({ _id: project, isDeleted: false }).select('_id')
+          if (!targetProject) return res.status(400).json({ success: false, message: 'Project not found' })
+        }
+        task.project = project || null
+      }
       if (labels !== undefined) task.labels = labels
     }
 
     await task.save()
     await task.populate('assignedTo', 'name avatarStyleStyle username')
+    await task.populate('createdBy', 'name avatarStyleStyle username')
+    await task.populate('project', 'title members')
     res.json({ success: true, task })
   } catch (error) {
     next(error)

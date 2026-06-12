@@ -11,7 +11,8 @@ import { PageLoader } from '../components/ui/Spinner'
 import EmptyState from '../components/ui/EmptyState'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import toast from 'react-hot-toast'
-import { can } from '../utils/accessControl'
+import { can, hasRoleAtLeast } from '../utils/accessControl'
+import { CreateTaskModal } from './Tasks'
 
 export default function ProjectDetail() {
   const { id } = useParams()
@@ -25,6 +26,7 @@ export default function ProjectDetail() {
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+  const [createTaskOpen, setCreateTaskOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
   const fetchProjectData = useCallback(() => {
@@ -55,6 +57,8 @@ export default function ProjectDetail() {
   const progress = project.progress ?? (tasks.length ? Math.round((completed / tasks.length) * 100) : 0)
   const canManageProjects = can(user, 'manageProjects')
   const canDeleteProjects = can(user, 'deleteProjects')
+  const canCreateTasks = can(user, 'createTasks')
+  const canAssignProjectManager = hasRoleAtLeast(user, 'ceo')
   const availableMembers = users.filter(member => !(project.members || []).some(existing => existing._id === member._id))
 
   const sendMessage = async e => {
@@ -89,6 +93,17 @@ export default function ProjectDetail() {
       toast.success('Member removed')
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to remove member')
+    }
+  }
+
+  const changeProjectManager = async ownerId => {
+    if (!ownerId || ownerId === project.owner?._id) return
+    try {
+      const res = await api.put(`/projects/${id}`, { owner: ownerId })
+      setProject(prev => ({ ...prev, ...res.data.project }))
+      toast.success('Project manager updated')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update project manager')
     }
   }
 
@@ -145,7 +160,14 @@ export default function ProjectDetail() {
         <div className="card" style={{ padding: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
             <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#101828' }}>Project Tasks</h2>
-            <span style={{ fontSize: 12, color: '#667085', fontWeight: 600 }}>{tasks.length} total</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 12, color: '#667085', fontWeight: 600 }}>{tasks.length} total</span>
+              {canCreateTasks && (
+                <button onClick={() => setCreateTaskOpen(true)} className="btn-primary" style={{ padding: '8px 11px' }}>
+                  <Plus size={14} /> New Task
+                </button>
+              )}
+            </div>
           </div>
           {tasks.length === 0 ? (
             <p style={{ margin: 0, padding: '18px 0', color: '#98A2B3', fontSize: 13, textAlign: 'center' }}>No tasks in this project yet</p>
@@ -216,6 +238,14 @@ export default function ProjectDetail() {
           <p style={{ margin: '0 0 10px', fontSize: 12.5, color: '#667085', fontWeight: 700 }}>Team</p>
           <AvatarGroup users={project.members || []} size={30} max={6} />
           {project.owner && <p style={{ margin: '14px 0 0', fontSize: 12.5, color: '#667085' }}>Owner: <strong style={{ color: '#101828' }}>{project.owner.name}</strong></p>}
+          {canAssignProjectManager && (
+            <div style={{ marginTop: 14 }}>
+              <label style={{ display: 'block', marginBottom: 6, fontSize: 11.5, color: '#98A2B3', fontWeight: 700 }}>Project Manager</label>
+              <select value={project.owner?._id || ''} onChange={e => changeProjectManager(e.target.value)} style={{ width: '100%', border: '1.5px solid #DBEAFE', borderRadius: 9, padding: '8px 10px', fontSize: 12.5, color: '#344054', outline: 'none', background: '#fff' }}>
+                {(project.members || []).map(member => <option key={member._id} value={member._id}>{member.name}</option>)}
+              </select>
+            </div>
+          )}
           {canManageProjects && (
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #EEF2F7' }}>
               <form onSubmit={addMember} style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
@@ -256,6 +286,13 @@ export default function ProjectDetail() {
         danger
         loading={deleting}
       />
+      {createTaskOpen && (
+        <CreateTaskModal
+          initialProjectId={id}
+          onClose={() => setCreateTaskOpen(false)}
+          onCreated={() => { setCreateTaskOpen(false); fetchProjectData() }}
+        />
+      )}
     </div>
   )
 }
