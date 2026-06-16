@@ -1,5 +1,7 @@
 ﻿import Comment from '../models/Comment.js'
 import Notification from '../models/Notification.js'
+import Project from '../models/Project.js'
+import Task from '../models/Task.js'
 import { hasRoleAtLeast } from '../utils/accessControl.js'
 
 export const getComments = async (req, res, next) => {
@@ -23,23 +25,41 @@ export const getComments = async (req, res, next) => {
 export const createComment = async (req, res, next) => {
   try {
     const { body, project, task, replyTo, mentions } = req.body
+    const mentionIds = [...new Set((mentions || []).filter(Boolean).map(uid => uid.toString()))]
+
+    let mentionProject = null
+    if (task) {
+      const relatedTask = await Task.findOne({ _id: task, isDeleted: false }).select('project')
+      if (!relatedTask) return res.status(404).json({ success: false, message: 'Task not found' })
+      if (relatedTask.project) {
+        mentionProject = await Project.findOne({ _id: relatedTask.project, isDeleted: false }).select('members')
+      }
+    } else if (project) {
+      mentionProject = await Project.findOne({ _id: project, isDeleted: false }).select('members')
+      if (!mentionProject) return res.status(404).json({ success: false, message: 'Project not found' })
+    }
+
+    const projectMemberIds = mentionProject?.members?.map(member => member.toString()) || []
+    const allowedMentionIds = mentionProject
+      ? mentionIds.filter(uid => projectMemberIds.includes(uid))
+      : []
 
     const comment = await Comment.create({
       body, project: project || null, task: task || null,
       author: req.user._id,
-      mentions: mentions || [],
+      mentions: allowedMentionIds,
       replyTo: replyTo || { id: null, body: '', authorName: '' },
     })
 
     await comment.populate('author', 'name avatarStyleStyle username')
     await comment.populate('mentions', 'name username')
 
-    if (mentions?.length) {
+    if (allowedMentionIds.length) {
       await Notification.insertMany(
-        mentions.filter(uid => uid !== req.user._id.toString()).map(uid => ({
+        allowedMentionIds.filter(uid => uid !== req.user._id.toString()).map(uid => ({
           recipient: uid, sender: req.user._id, type: 'comment_mention',
           message: `${req.user.name} mentioned you in a comment`,
-          link: project ? `/projects/${project}` : `/tasks/${task}`,
+          link: task ? `/tasks/${task}` : `/projects/${project}`,
         }))
       )
     }

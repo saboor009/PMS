@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Calendar, CheckCircle2, Clock, FileText, FolderKanban, Paperclip, Plus, Trash2, Upload, UserCircle, X } from 'lucide-react'
+import { ArrowLeft, Calendar, CheckCircle2, Clock, FileText, FolderKanban, MessageSquare, Paperclip, Plus, Send, Trash2, Upload, UserCircle, X } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { format, formatDistanceToNow, isPast } from 'date-fns'
 import api from '../services/api'
@@ -18,9 +18,11 @@ export default function TaskDetail() {
   const { user } = useAuth()
   const [task, setTask] = useState(null)
   const [files, setFiles] = useState([])
+  const [comments, setComments] = useState([])
   const [users, setUsers] = useState([])
   const [projects, setProjects] = useState([])
   const [assigneeToAdd, setAssigneeToAdd] = useState('')
+  const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [subtaskTitle, setSubtaskTitle] = useState('')
   const [uploading, setUploading] = useState(false)
@@ -28,16 +30,57 @@ export default function TaskDetail() {
   const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
-    Promise.all([api.get(`/tasks/${id}`), api.get('/users'), api.get('/projects')])
-      .then(([taskRes, usersRes, projectsRes]) => {
+    Promise.all([api.get(`/tasks/${id}`), api.get('/users'), api.get('/projects'), api.get(`/comments?task=${id}`)])
+      .then(([taskRes, usersRes, projectsRes, commentsRes]) => {
         setTask(taskRes.data.task)
         setFiles(taskRes.data.files || [])
         setUsers(usersRes.data.users || [])
         setProjects(projectsRes.data.projects || [])
+        setComments(commentsRes.data.comments || [])
       })
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [id])
+
+  const getProjectMembers = () => {
+    const projectId = task?.project?._id
+    if (!projectId) return []
+    const project = projects.find(item => item._id === projectId)
+    return project?.members || []
+  }
+
+  const getMentionQuery = () => {
+    const match = message.match(/(^|\s)@([\w.-]*)$/)
+    return match ? match[2].toLowerCase() : null
+  }
+
+  const getMentionIds = () => {
+    const tokens = [...message.matchAll(/@([\w.-]+)/g)].map(match => match[1].toLowerCase())
+    return getProjectMembers()
+      .filter(member => {
+        const username = member.username?.toLowerCase()
+        const compactName = member.name?.replace(/\s+/g, '').toLowerCase()
+        return tokens.includes(username) || tokens.includes(compactName)
+      })
+      .map(member => member._id)
+  }
+
+  const insertMention = member => {
+    const handle = member.username || member.name?.replace(/\s+/g, '') || 'member'
+    setMessage(prev => prev.replace(/(^|\s)@([\w.-]*)$/, `$1@${handle} `))
+  }
+
+  const sendMessage = async e => {
+    e.preventDefault()
+    if (!message.trim()) return
+    try {
+      const res = await api.post('/comments', { task: id, body: message, mentions: getMentionIds() })
+      setComments(prev => [...prev, res.data.comment])
+      setMessage('')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to send')
+    }
+  }
 
   const updateStatus = async status => {
     try {
@@ -150,6 +193,15 @@ export default function TaskDetail() {
   const canAssignTasks = can(user, 'assignTasks')
   const canDeleteTasks = can(user, 'deleteTasks')
   const availableAssignees = users.filter(member => !(task.assignedTo || []).some(existing => existing._id === member._id))
+  const projectMembers = getProjectMembers()
+  const mentionQuery = getMentionQuery()
+  const mentionSuggestions = mentionQuery === null
+    ? []
+    : projectMembers.filter(member => {
+      const name = member.name?.toLowerCase() || ''
+      const username = member.username?.toLowerCase() || ''
+      return name.includes(mentionQuery) || username.includes(mentionQuery)
+    }).slice(0, 5)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -251,6 +303,56 @@ export default function TaskDetail() {
                 ))}
               </div>
             )}
+          </div>
+
+          <div className="card" style={{ padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 9, background: '#EFF6FF', color: '#2F85C8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <MessageSquare size={17} />
+                </div>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#101828' }}>Task Chat</h2>
+                  <p style={{ margin: '2px 0 0', fontSize: 12, color: '#98A2B3' }}>{task.project?._id ? 'Mention project members with @' : 'Messages for this task'}</p>
+                </div>
+              </div>
+              <span style={{ fontSize: 12, color: '#667085', fontWeight: 700 }}>{comments.length}</span>
+            </div>
+
+            <div style={{ height: 310, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, padding: '2px 2px 12px' }}>
+              {comments.length === 0 ? (
+                <div style={{ border: '1px dashed #BAD6F4', borderRadius: 10, padding: 24, color: '#98A2B3', textAlign: 'center', fontSize: 13 }}>No task messages yet</div>
+              ) : comments.map(comment => {
+                const mine = comment.author?._id === user?._id
+                return (
+                  <div key={comment._id} style={{ display: 'flex', gap: 9, alignItems: 'flex-start', flexDirection: mine ? 'row-reverse' : 'row' }}>
+                    <Avatar name={comment.author?.name} avatar={comment.author?.avatar} size={30} />
+                    <div style={{ maxWidth: '78%', background: mine ? '#EFF6FF' : '#F8FAFC', border: '1px solid #EEF2F7', borderRadius: 10, padding: '8px 10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3, justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+                        <span style={{ fontSize: 11.5, fontWeight: 800, color: '#101828' }}>{comment.author?.name || 'User'}</span>
+                        <span style={{ fontSize: 10.5, color: '#98A2B3' }}>{new Date(comment.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: 13, color: '#344054', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{comment.body}</p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <form onSubmit={sendMessage} style={{ position: 'relative', display: 'flex', gap: 8, borderTop: '1px solid #F2F4F7', paddingTop: 12 }}>
+              {mentionSuggestions.length > 0 && (
+                <div style={{ position: 'absolute', left: 0, right: 48, bottom: 50, background: '#fff', border: '1px solid #DBEAFE', borderRadius: 10, boxShadow: '0 12px 28px rgba(16, 24, 40, 0.12)', padding: 6, zIndex: 2 }}>
+                  {mentionSuggestions.map(member => (
+                    <button key={member._id} type="button" onClick={() => insertMention(member)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', border: 'none', borderRadius: 8, background: '#fff', cursor: 'pointer', textAlign: 'left' }}>
+                      <Avatar name={member.name} avatar={member.avatar} size={26} />
+                      <span style={{ minWidth: 0, fontSize: 12.5, fontWeight: 700, color: '#101828', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{member.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <input value={message} onChange={e => setMessage(e.target.value)} placeholder={task.project?._id ? 'Message or @mention a project member...' : 'Message this task...'} style={{ flex: 1, border: '1.5px solid #DBEAFE', borderRadius: 9, padding: '9px 11px', fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
+              <button type="submit" className="btn-primary" style={{ padding: '9px 12px' }}><Send size={14} /></button>
+            </form>
           </div>
         </div>
 
