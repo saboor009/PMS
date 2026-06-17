@@ -38,6 +38,29 @@ export const getDashboard = async (req, res, next) => {
         .lean(),
     ])
 
+    const recentProjectIds = recentProjects.map(project => project._id)
+    const projectTaskStats = recentProjectIds.length
+      ? await Task.aggregate([
+        { $match: { project: { $in: recentProjectIds }, isDeleted: false } },
+        {
+          $group: {
+            _id: '$project',
+            total: { $sum: 1 },
+            done: { $sum: { $cond: [{ $eq: ['$status', 'done'] }, 1, 0] } },
+          },
+        },
+      ])
+      : []
+    const statsByProject = new Map(projectTaskStats.map(stat => [stat._id.toString(), stat]))
+    const recentProjectsWithProgress = recentProjects.map(project => {
+      const taskStats = statsByProject.get(project._id.toString())
+      const taskProgress = taskStats?.total ? Math.round((taskStats.done / taskStats.total) * 100) : null
+      return {
+        ...project,
+        progress: project.status === 'completed' ? 100 : taskProgress ?? project.progress ?? 0,
+      }
+    })
+
     let employeeStats = null
     if (can(user, 'viewEmployeeSummary')) {
       const [employees, openTaskCounts] = await Promise.all([
@@ -73,7 +96,7 @@ export const getDashboard = async (req, res, next) => {
     res.json({
       success: true,
       stats: { totalProjects, totalTasks, doneTasks, totalMembers },
-      recentProjects,
+      recentProjects: recentProjectsWithProgress,
       kanbanTasks,
       upcomingTasks,
       employeeStats,

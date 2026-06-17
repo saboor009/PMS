@@ -54,7 +54,7 @@ export default function ProjectDetail() {
   if (!project) return <EmptyState icon={FolderKanban} title="Project not found" description="This project is unavailable or you do not have access." />
 
   const completed = tasks.filter(t => t.status === 'done').length
-  const progress = project.progress ?? (tasks.length ? Math.round((completed / tasks.length) * 100) : 0)
+  const progress = project.status === 'completed' ? 100 : (tasks.length ? Math.round((completed / tasks.length) * 100) : project.progress || 0)
   const isProjectManager = project.owner?._id === user?._id
   const canManageProjects = can(user, 'manageProjects')
   const canManageThisProject = canManageProjects || isProjectManager
