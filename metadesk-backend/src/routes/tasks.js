@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { getTasks, getTask, createTask, updateTask, deleteTask, addAssignee, removeAssignee, logHours, uploadTaskFile, deleteTaskFile, addSubtask, updateSubtask } from '../controllers/taskController.js'
+import { getTasks, getTask, createTask, updateTask, deleteTask, addAssignee, removeAssignee, logHours, uploadTaskFile, downloadTaskFile, deleteTaskFile, addSubtask, updateSubtask } from '../controllers/taskController.js'
 import { protect } from '../middleware/auth.js'
 import { requirePermission } from '../middleware/roleCheck.js'
 import multer from 'multer'
@@ -19,6 +19,7 @@ router.post('/:id/assignees', addAssignee)
 router.delete('/:id/assignees/:userId', removeAssignee)
 router.post('/:id/hours', logHours)
 router.post('/:id/files', upload.single('file'), uploadTaskFile)
+router.get('/:id/files/:fileId/download', downloadTaskFile)
 router.delete('/:id/files/:fileId', deleteTaskFile)
 router.post('/:id/subtasks', addSubtask)
 router.put('/:id/subtasks/:subtaskId', updateSubtask)

@@ -3,6 +3,8 @@ import Project from '../models/Project.js'
 import Notification from '../models/Notification.js'
 import File from '../models/File.js'
 import { can, hasRoleAtLeast } from '../utils/accessControl.js'
+import fs from 'fs'
+import path from 'path'
 
 const isProjectManager = (project, user) => project?.owner?.toString() === user._id.toString()
 
@@ -288,6 +290,27 @@ export const deleteTaskFile = async (req, res, next) => {
     const File = (await import('../models/File.js')).default
     await File.findByIdAndUpdate(req.params.fileId, { isDeleted: true })
     res.json({ success: true, message: 'File deleted' })
+  } catch (error) {
+    next(error)
+  }
+}
+
+export const downloadTaskFile = async (req, res, next) => {
+  try {
+    const file = await File.findOne({ _id: req.params.fileId, task: req.params.id, isDeleted: false })
+    if (!file) return res.status(404).json({ success: false, message: 'File not found' })
+    if (!file.fileUrl) return res.status(404).json({ success: false, message: 'File path missing' })
+
+    const relativePath = file.fileUrl.replace(/^\/+/, '')
+    const primaryPath = path.resolve(process.cwd(), relativePath)
+    const fallbackPath = path.resolve(process.cwd(), 'metadesk-backend', relativePath)
+    const filePath = fs.existsSync(primaryPath) ? primaryPath : fallbackPath
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, message: 'File is no longer available' })
+    }
+
+    res.download(filePath, file.originalName || file.fileName)
   } catch (error) {
     next(error)
   }

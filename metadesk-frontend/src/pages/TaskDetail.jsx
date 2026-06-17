@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Calendar, CheckCircle2, Clock, FileText, FolderKanban, MessageSquare, Paperclip, Plus, Send, Trash2, Upload, UserCircle, X } from 'lucide-react'
+import { ArrowLeft, Calendar, CheckCircle2, Clock, Download, FileText, FolderKanban, MessageSquare, Paperclip, Plus, Send, Trash2, Upload, UserCircle, X } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { format, formatDistanceToNow, isPast } from 'date-fns'
 import api from '../services/api'
@@ -26,6 +26,7 @@ export default function TaskDetail() {
   const [loading, setLoading] = useState(true)
   const [subtaskTitle, setSubtaskTitle] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [downloadingFile, setDownloadingFile] = useState(null)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
@@ -143,6 +144,26 @@ export default function TaskDetail() {
     } finally {
       setUploading(false)
       e.target.value = ''
+    }
+  }
+
+  const downloadFile = async file => {
+    setDownloadingFile(file._id)
+    try {
+      const res = await api.get(`/tasks/${id}/files/${file._id}/download`, { responseType: 'blob' })
+      const fileUrl = window.URL.createObjectURL(new Blob([res.data], { type: file.mimeType || 'application/octet-stream' }))
+      const link = document.createElement('a')
+      link.href = fileUrl
+      link.download = file.originalName || file.fileName || 'task-file'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(fileUrl)
+      toast.success('Download started')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Download failed')
+    } finally {
+      setDownloadingFile(null)
     }
   }
 
@@ -279,13 +300,13 @@ export default function TaskDetail() {
             )}
           </div>
 
-          <div className="card" style={{ padding: 20 }}>
+          <div className="card" style={{ padding: 20, border: '1px solid #A7F3D0', background: 'linear-gradient(135deg, #F0FDFA 0%, #FFFFFF 52%, #FFF7ED 100%)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
               <div>
                 <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#101828' }}>Employee File Submission</h2>
-                <p style={{ margin: '3px 0 0', fontSize: 12, color: '#98A2B3' }}>Upload proof, drafts, screenshots, or deliverables for this task.</p>
+                <p style={{ margin: '3px 0 0', fontSize: 12, color: '#0F766E' }}>Upload proof, drafts, screenshots, or deliverables for this task.</p>
               </div>
-              <label className="btn-primary" style={{ padding: '9px 13px', cursor: uploading ? 'not-allowed' : 'pointer', opacity: uploading ? 0.65 : 1 }}>
+              <label className="btn-primary" style={{ padding: '9px 13px', cursor: uploading ? 'not-allowed' : 'pointer', opacity: uploading ? 0.65 : 1, background: '#0D9488', boxShadow: '0 8px 18px rgba(13,148,136,0.22)' }}>
                 <Upload size={14} /> {uploading ? 'Uploading...' : 'Submit file'}
                 <input type="file" onChange={uploadFile} disabled={uploading} style={{ display: 'none' }} />
               </label>
@@ -296,13 +317,16 @@ export default function TaskDetail() {
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10 }}>
                 {files.map(file => (
-                  <a key={file._id} href={file.fileUrl} target="_blank" rel="noreferrer" style={{ display: 'flex', gap: 10, padding: 12, border: '1px solid #EEF2F7', borderRadius: 10, color: 'inherit', textDecoration: 'none', background: '#fff' }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 9, background: '#EFF6FF', color: '#2F85C8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FileText size={17} /></div>
-                    <div style={{ minWidth: 0 }}>
+                  <button key={file._id} type="button" onClick={() => downloadFile(file)} disabled={downloadingFile === file._id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, border: '1px solid #99F6E4', borderRadius: 10, color: 'inherit', textDecoration: 'none', background: '#fff', boxShadow: '0 8px 20px rgba(15,118,110,0.09)', cursor: downloadingFile === file._id ? 'wait' : 'pointer', textAlign: 'left', width: '100%', opacity: downloadingFile === file._id ? 0.72 : 1 }}>
+                    <div style={{ width: 38, height: 38, borderRadius: 10, background: '#CCFBF1', color: '#0F766E', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FileText size={18} /></div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
                       <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#101828', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.originalName || file.fileName}</p>
                       <p style={{ margin: '3px 0 0', fontSize: 11.5, color: '#98A2B3' }}>{file.uploadedBy?.name || 'Uploaded'} • {formatDistanceToNow(new Date(file.createdAt), { addSuffix: true })}</p>
                     </div>
-                  </a>
+                    <div title="Download file" style={{ width: 34, height: 34, borderRadius: 9, background: '#F97316', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <Download size={16} />
+                    </div>
+                  </button>
                 ))}
               </div>
             )}
