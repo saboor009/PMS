@@ -4,6 +4,21 @@ import Notification from '../models/Notification.js'
 import File from '../models/File.js'
 import { can, hasRoleAtLeast } from '../utils/accessControl.js'
 
+const isProjectManager = (project, user) => project?.owner?.toString() === user._id.toString()
+
+const getManagedProject = async (projectId, user) => {
+  if (!projectId) return null
+  const project = await Project.findOne({ _id: projectId, isDeleted: false }).select('owner members')
+  if (!project) return null
+  return isProjectManager(project, user) ? project : null
+}
+
+const canManageProjectTask = async (task, user) => {
+  if (hasRoleAtLeast(user, 'manager')) return true
+  if (!task.project) return false
+  return Boolean(await getManagedProject(task.project, user))
+}
+
 export const getTasks = async (req, res, next) => {
   try {
     const { status, priority, project, scope, search, assignee } = req.query
@@ -12,6 +27,14 @@ export const getTasks = async (req, res, next) => {
     let filter = { isDeleted: false }
     if (scope === 'standalone') filter.project = null
     else if (scope === 'project') filter.project = { $ne: null }
+    else if (project && !hasRoleAtLeast(user, 'manager')) {
+      const targetProject = await Project.findOne({ _id: project, isDeleted: false }).select('owner members')
+      if (!targetProject) return res.status(404).json({ success: false, message: 'Project not found' })
+      const isMember = targetProject.members.some(member => member.toString() === user._id.toString())
+      if (!isProjectManager(targetProject, user) && !isMember) {
+        return res.status(403).json({ success: false, message: 'Access denied' })
+      }
+    }
     else if (!hasRoleAtLeast(user, 'manager')) {
       filter.$or = [{ assignedTo: user._id }, { createdBy: user._id }]
     }
@@ -59,9 +82,22 @@ export const createTask = async (req, res, next) => {
   try {
     const { title, description, priority, project, assignedTo, dueDate, estimatedHours, subtasks, labels } = req.body
     const assignees = assignedTo || []
+    let managedProject = null
+    if (project) {
+      const targetProject = await Project.findOne({ _id: project, isDeleted: false }).select('owner members')
+      if (!targetProject) return res.status(400).json({ success: false, message: 'Project not found' })
+      const isMember = targetProject.members.some(member => member.toString() === req.user._id.toString())
+      managedProject = isProjectManager(targetProject, req.user) ? targetProject : null
+      if (!hasRoleAtLeast(req.user, 'manager') && !managedProject && !isMember) {
+        return res.status(403).json({ success: false, message: 'Access denied' })
+      }
+    }
 
-    if (assignees.length && !can(req.user, 'assignTasks')) {
+    if (assignees.length && !can(req.user, 'assignTasks') && !managedProject) {
       return res.status(403).json({ success: false, message: 'You do not have permission to assign tasks' })
+    }
+    if (managedProject && assignees.some(uid => !managedProject.members.some(member => member.toString() === uid.toString()))) {
+      return res.status(400).json({ success: false, message: 'Project managers can only assign project members' })
     }
 
     const task = await Task.create({
@@ -99,9 +135,10 @@ export const updateTask = async (req, res, next) => {
 
     const { user } = req
     const isManager = hasRoleAtLeast(user, 'manager')
-    const canComplete = can(user, 'assignTasks')
+    const isProjectTaskManager = await canManageProjectTask(task, user)
+    const canComplete = can(user, 'assignTasks') || isProjectTaskManager
     const isAssignee = task.assignedTo.some(a => a.toString() === user._id.toString())
-    if (!isManager && !isAssignee) return res.status(403).json({ success: false, message: 'Access denied' })
+    if (!isManager && !isAssignee && !isProjectTaskManager) return res.status(403).json({ success: false, message: 'Access denied' })
 
     const { status, title, description, priority, dueDate, estimatedHours, loggedHours, project, labels } = req.body
 
@@ -123,7 +160,7 @@ export const updateTask = async (req, res, next) => {
       }
     }
 
-    if (can(user, 'assignTasks') || task.createdBy.toString() === user._id.toString()) {
+    if (can(user, 'assignTasks') || isProjectTaskManager || task.createdBy.toString() === user._id.toString()) {
       if (title) task.title = title
       if (description !== undefined) task.description = description
       if (priority) task.priority = priority
@@ -164,7 +201,14 @@ export const addAssignee = async (req, res, next) => {
     const { userId } = req.body
     const task = await Task.findOne({ _id: req.params.id, isDeleted: false })
     if (!task) return res.status(404).json({ success: false, message: 'Task not found' })
-    if (!task.assignedTo.includes(userId)) task.assignedTo.push(userId)
+    const managedProject = await getManagedProject(task.project, req.user)
+    if (!can(req.user, 'assignTasks') && !managedProject) {
+      return res.status(403).json({ success: false, message: 'You do not have permission to assign tasks' })
+    }
+    if (managedProject && !managedProject.members.some(member => member.toString() === userId.toString())) {
+      return res.status(400).json({ success: false, message: 'Project managers can only assign project members' })
+    }
+    if (!task.assignedTo.some(assignee => assignee.toString() === userId.toString())) task.assignedTo.push(userId)
     await task.save()
     await task.populate('assignedTo', 'name avatarStyleStyle username')
     res.json({ success: true, task })
@@ -177,6 +221,9 @@ export const removeAssignee = async (req, res, next) => {
   try {
     const task = await Task.findOne({ _id: req.params.id, isDeleted: false })
     if (!task) return res.status(404).json({ success: false, message: 'Task not found' })
+    if (!can(req.user, 'assignTasks') && !await canManageProjectTask(task, req.user)) {
+      return res.status(403).json({ success: false, message: 'You do not have permission to assign tasks' })
+    }
     task.assignedTo = task.assignedTo.filter(a => a.toString() !== req.params.userId)
     await task.save()
     res.json({ success: true, message: 'Assignee removed' })

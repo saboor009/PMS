@@ -4,6 +4,9 @@ import Notification from '../models/Notification.js'
 import ActivityLog from '../models/ActivityLog.js'
 import { hasRoleAtLeast } from '../utils/accessControl.js'
 
+const isProjectManager = (project, user) => project.owner?.toString() === user._id.toString()
+const canManageProject = (project, user) => hasRoleAtLeast(user, 'manager') || isProjectManager(project, user)
+
 export const getProjects = async (req, res, next) => {
   try {
     const { search, status } = req.query
@@ -78,12 +81,15 @@ export const updateProject = async (req, res, next) => {
   try {
     const project = await Project.findOne({ _id: req.params.id, isDeleted: false })
     if (!project) return res.status(404).json({ success: false, message: 'Project not found' })
+    if (!canManageProject(project, req.user)) {
+      return res.status(403).json({ success: false, message: 'Only managers or this project manager can update the project' })
+    }
 
     const fields = ['title', 'description', 'status', 'priority', 'startDate', 'deadline', 'tags', 'progress', 'coverColor']
     fields.forEach(f => { if (req.body[f] !== undefined) project[f] = req.body[f] })
     if (req.body.owner !== undefined) {
-      if (!hasRoleAtLeast(req.user, 'ceo')) {
-        return res.status(403).json({ success: false, message: 'Only CEO can assign the project manager' })
+      if (!hasRoleAtLeast(req.user, 'manager')) {
+        return res.status(403).json({ success: false, message: 'Only managers can assign the project manager' })
       }
       const ownerId = req.body.owner?.toString()
       const isProjectMember = project.members.some(member => member.toString() === ownerId)
@@ -130,8 +136,13 @@ export const addMember = async (req, res, next) => {
     const { userId } = req.body
     const project = await Project.findOne({ _id: req.params.id, isDeleted: false })
     if (!project) return res.status(404).json({ success: false, message: 'Project not found' })
+    if (!canManageProject(project, req.user)) {
+      return res.status(403).json({ success: false, message: 'Only managers or this project manager can add members' })
+    }
 
-    if (project.members.includes(userId)) return res.status(400).json({ success: false, message: 'Already a member' })
+    if (project.members.some(member => member.toString() === userId.toString())) {
+      return res.status(400).json({ success: false, message: 'Already a member' })
+    }
     project.members.push(userId)
     await project.save()
     await project.populate('members', 'name avatarStyleStyle username designation')
@@ -148,6 +159,12 @@ export const removeMember = async (req, res, next) => {
   try {
     const project = await Project.findOne({ _id: req.params.id, isDeleted: false })
     if (!project) return res.status(404).json({ success: false, message: 'Project not found' })
+    if (!canManageProject(project, req.user)) {
+      return res.status(403).json({ success: false, message: 'Only managers or this project manager can remove members' })
+    }
+    if (project.owner.toString() === req.params.userId) {
+      return res.status(400).json({ success: false, message: 'Assign a new project manager before removing this member' })
+    }
     project.members = project.members.filter(m => m.toString() !== req.params.userId)
     await project.save()
     res.json({ success: true, message: 'Member removed' })
@@ -184,5 +201,14 @@ export const deleteProjectFile = async (req, res, next) => {
 }
 
 export const updateMemberPermission = async (req, res, next) => {
-  res.json({ success: true, message: 'Permissions updated' })
+  try {
+    const project = await Project.findOne({ _id: req.params.id, isDeleted: false })
+    if (!project) return res.status(404).json({ success: false, message: 'Project not found' })
+    if (!canManageProject(project, req.user)) {
+      return res.status(403).json({ success: false, message: 'Only managers or this project manager can update member permissions' })
+    }
+    res.json({ success: true, message: 'Permissions updated' })
+  } catch (error) {
+    next(error)
+  }
 }

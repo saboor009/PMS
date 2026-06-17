@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ArrowLeft, Calendar, CheckSquare, FolderKanban, MessageSquare, Plus, Send, Trash2, Users, X } from 'lucide-react'
+import { ArrowLeft, Calendar, CheckSquare, FolderKanban, MessageSquare, Plus, Send, Trash2, UserCheck, Users, X } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { format } from 'date-fns'
 import api from '../services/api'
@@ -55,17 +55,40 @@ export default function ProjectDetail() {
 
   const completed = tasks.filter(t => t.status === 'done').length
   const progress = project.progress ?? (tasks.length ? Math.round((completed / tasks.length) * 100) : 0)
+  const isProjectManager = project.owner?._id === user?._id
   const canManageProjects = can(user, 'manageProjects')
+  const canManageThisProject = canManageProjects || isProjectManager
   const canDeleteProjects = can(user, 'deleteProjects')
   const canCreateTasks = can(user, 'createTasks')
-  const canAssignProjectManager = hasRoleAtLeast(user, 'ceo')
+  const canAssignProjectManager = hasRoleAtLeast(user, 'manager')
   const availableMembers = users.filter(member => !(project.members || []).some(existing => existing._id === member._id))
+
+  const getMentionQuery = () => {
+    const match = message.match(/(^|\s)@([\w.-]*)$/)
+    return match ? match[2].toLowerCase() : null
+  }
+
+  const getMentionIds = () => {
+    const tokens = [...message.matchAll(/@([\w.-]+)/g)].map(match => match[1].toLowerCase())
+    return (project.members || [])
+      .filter(member => {
+        const username = member.username?.toLowerCase()
+        const compactName = member.name?.replace(/\s+/g, '').toLowerCase()
+        return tokens.includes(username) || tokens.includes(compactName)
+      })
+      .map(member => member._id)
+  }
+
+  const insertMention = member => {
+    const handle = member.username || member.name?.replace(/\s+/g, '') || 'member'
+    setMessage(prev => prev.replace(/(^|\s)@([\w.-]*)$/, `$1@${handle} `))
+  }
 
   const sendMessage = async e => {
     e.preventDefault()
     if (!message.trim()) return
     try {
-      const res = await api.post('/comments', { project: id, body: message })
+      const res = await api.post('/comments', { project: id, body: message, mentions: getMentionIds() })
       setComments(prev => [...prev, res.data.comment])
       setMessage('')
     } catch (err) {
@@ -107,6 +130,16 @@ export default function ProjectDetail() {
     }
   }
 
+  const completeProject = async () => {
+    try {
+      const res = await api.put(`/projects/${id}`, { status: 'completed', progress: 100 })
+      setProject(prev => ({ ...prev, ...res.data.project }))
+      toast.success('Project marked completed')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to complete project')
+    }
+  }
+
   const deleteProject = async () => {
     setDeleting(true)
     try {
@@ -119,6 +152,15 @@ export default function ProjectDetail() {
       setDeleting(false)
     }
   }
+
+  const mentionQuery = getMentionQuery()
+  const mentionSuggestions = mentionQuery === null
+    ? []
+    : (project.members || []).filter(member => {
+      const name = member.name?.toLowerCase() || ''
+      const username = member.username?.toLowerCase() || ''
+      return name.includes(mentionQuery) || username.includes(mentionQuery)
+    }).slice(0, 5)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -150,6 +192,7 @@ export default function ProjectDetail() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <Metric icon={CheckSquare} label="Tasks" value={`${completed}/${tasks.length} done`} />
             <Metric icon={Users} label="Members" value={`${project.members?.length || 0} members`} />
+            <Metric icon={UserCheck} label="Project Manager" value={project.owner?.name || 'Unassigned'} />
             <Metric icon={Calendar} label="Deadline" value={project.deadline ? format(new Date(project.deadline), 'MMM d, yyyy') : 'No deadline'} />
           </div>
         </div>
@@ -221,8 +264,18 @@ export default function ProjectDetail() {
             })}
           </div>
 
-          <form onSubmit={sendMessage} style={{ display: 'flex', gap: 8, borderTop: '1px solid #F2F4F7', paddingTop: 12 }}>
-            <input value={message} onChange={e => setMessage(e.target.value)} placeholder="Message the project team..." style={{ flex: 1, border: '1.5px solid #DBEAFE', borderRadius: 9, padding: '9px 11px', fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
+          <form onSubmit={sendMessage} style={{ position: 'relative', display: 'flex', gap: 8, borderTop: '1px solid #F2F4F7', paddingTop: 12 }}>
+            {mentionSuggestions.length > 0 && (
+              <div style={{ position: 'absolute', left: 0, right: 48, bottom: 50, background: '#fff', border: '1px solid #DBEAFE', borderRadius: 10, boxShadow: '0 12px 28px rgba(16, 24, 40, 0.12)', padding: 6, zIndex: 2 }}>
+                {mentionSuggestions.map(member => (
+                  <button key={member._id} type="button" onClick={() => insertMention(member)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', border: 'none', borderRadius: 8, background: '#fff', cursor: 'pointer', textAlign: 'left' }}>
+                    <Avatar name={member.name} avatar={member.avatar} size={26} />
+                    <span style={{ minWidth: 0, fontSize: 12.5, fontWeight: 700, color: '#101828', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{member.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <input value={message} onChange={e => setMessage(e.target.value)} placeholder="Message or @mention the project team..." style={{ flex: 1, border: '1.5px solid #DBEAFE', borderRadius: 9, padding: '9px 11px', fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
             <button type="submit" className="btn-primary" style={{ padding: '9px 12px' }}><Send size={14} /></button>
           </form>
         </div>
@@ -235,9 +288,14 @@ export default function ProjectDetail() {
           <div style={{ height: 7, background: '#EFF6FF', borderRadius: 99, overflow: 'hidden', margin: '12px 0 18px' }}>
             <div style={{ width: `${progress}%`, height: '100%', background: project.coverColor || '#2F85C8' }} />
           </div>
+          {canManageThisProject && project.status !== 'completed' && (
+            <button onClick={completeProject} className="btn-primary" style={{ width: '100%', justifyContent: 'center', marginBottom: 14 }}>
+              <CheckSquare size={14} /> Mark Completed
+            </button>
+          )}
           <p style={{ margin: '0 0 10px', fontSize: 12.5, color: '#667085', fontWeight: 700 }}>Team</p>
           <AvatarGroup users={project.members || []} size={30} max={6} />
-          {project.owner && <p style={{ margin: '14px 0 0', fontSize: 12.5, color: '#667085' }}>Owner: <strong style={{ color: '#101828' }}>{project.owner.name}</strong></p>}
+          {project.owner && <p style={{ margin: '14px 0 0', fontSize: 12.5, color: '#667085' }}>Project Manager: <strong style={{ color: '#101828' }}>{project.owner.name}</strong>{isProjectManager && <span style={{ marginLeft: 6, color: '#2F85C8', fontWeight: 800 }}>(you)</span>}</p>}
           {canAssignProjectManager && (
             <div style={{ marginTop: 14 }}>
               <label style={{ display: 'block', marginBottom: 6, fontSize: 11.5, color: '#98A2B3', fontWeight: 700 }}>Project Manager</label>
@@ -246,7 +304,7 @@ export default function ProjectDetail() {
               </select>
             </div>
           )}
-          {canManageProjects && (
+          {canManageThisProject && (
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #EEF2F7' }}>
               <form onSubmit={addMember} style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
                 <select value={memberToAdd} onChange={e => setMemberToAdd(e.target.value)} style={{ flex: 1, minWidth: 0, border: '1.5px solid #DBEAFE', borderRadius: 9, padding: '8px 10px', fontSize: 12.5, color: '#344054', outline: 'none', background: '#fff' }}>
@@ -289,6 +347,8 @@ export default function ProjectDetail() {
       {createTaskOpen && (
         <CreateTaskModal
           initialProjectId={id}
+          canAssignOverride={canManageThisProject}
+          assignableUsers={project.members || []}
           onClose={() => setCreateTaskOpen(false)}
           onCreated={() => { setCreateTaskOpen(false); fetchProjectData() }}
         />

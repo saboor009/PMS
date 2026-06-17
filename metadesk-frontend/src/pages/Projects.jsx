@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search, FolderKanban, Calendar, Users, Trash2 } from 'lucide-react'
+import { Plus, Search, FolderKanban, Calendar, Users, Trash2, UserCheck } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import api from '../services/api'
 import { useAuth } from '../context/AuthContext'
@@ -131,6 +131,7 @@ function ProjectCard({ project: p, canDelete, onDelete }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
           <PriorityBadge priority={p.priority} />
           {p.deadline && <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: '#6B7280' }}><Calendar size={11} />{format(new Date(p.deadline),'MMM d, yyyy')}</span>}
+          {p.owner?.name && <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: '#6B7280' }}><UserCheck size={11} />{p.owner.name}</span>}
         </div>
         <div style={{ marginBottom: 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>

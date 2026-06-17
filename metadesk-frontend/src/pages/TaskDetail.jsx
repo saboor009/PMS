@@ -189,11 +189,14 @@ export default function TaskDetail() {
   const doneSubtasks = subtasks.filter(s => s.isCompleted).length
   const completion = subtasks.length ? Math.round((doneSubtasks / subtasks.length) * 100) : 0
   const dueIsPast = task.dueDate && isPast(new Date(task.dueDate)) && task.status !== 'done'
-  const canCompleteTasks = can(user, 'assignTasks')
-  const canAssignTasks = can(user, 'assignTasks')
-  const canDeleteTasks = can(user, 'deleteTasks')
-  const availableAssignees = users.filter(member => !(task.assignedTo || []).some(existing => existing._id === member._id))
   const projectMembers = getProjectMembers()
+  const currentProject = projects.find(project => project._id === task.project?._id)
+  const isProjectManager = currentProject?.owner?._id === user?._id
+  const canCompleteTasks = can(user, 'assignTasks') || isProjectManager
+  const canAssignTasks = can(user, 'assignTasks') || isProjectManager
+  const canDeleteTasks = can(user, 'deleteTasks')
+  const assigneePool = isProjectManager && projectMembers.length ? projectMembers : users
+  const availableAssignees = assigneePool.filter(member => !(task.assignedTo || []).some(existing => existing._id === member._id))
   const mentionQuery = getMentionQuery()
   const mentionSuggestions = mentionQuery === null
     ? []
