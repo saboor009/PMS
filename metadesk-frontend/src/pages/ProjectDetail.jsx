@@ -497,7 +497,7 @@ export default function ProjectDetail() {
         <CreateTaskModal
           initialProjectId={id}
           canAssignOverride={canManageThisProject}
-          assignableUsers={project.members || []}
+          assignableUsers={users}
           onClose={() => setCreateTaskOpen(false)}
           onCreated={() => { setCreateTaskOpen(false); fetchProjectData() }}
         />

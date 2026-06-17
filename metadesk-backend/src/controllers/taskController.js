@@ -109,10 +109,6 @@ export const createTask = async (req, res, next) => {
     if (assignees.length && !can(req.user, 'assignTasks') && !managedProject) {
       return res.status(403).json({ success: false, message: 'You do not have permission to assign tasks' })
     }
-    if (managedProject && assignees.some(uid => !managedProject.members.some(member => member.toString() === uid.toString()))) {
-      return res.status(400).json({ success: false, message: 'Project managers can only assign project members' })
-    }
-
     const task = await Task.create({
       title, description, priority, labels,
       project: project || null,
@@ -218,9 +214,6 @@ export const addAssignee = async (req, res, next) => {
     const managedProject = await getManagedProject(task.project, req.user)
     if (!can(req.user, 'assignTasks') && !managedProject) {
       return res.status(403).json({ success: false, message: 'You do not have permission to assign tasks' })
-    }
-    if (managedProject && !managedProject.members.some(member => member.toString() === userId.toString())) {
-      return res.status(400).json({ success: false, message: 'Project managers can only assign project members' })
     }
     if (!task.assignedTo.some(assignee => assignee.toString() === userId.toString())) task.assignedTo.push(userId)
     await task.save()
