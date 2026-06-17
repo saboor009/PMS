@@ -3,6 +3,24 @@ import Notification from '../models/Notification.js'
 import Project from '../models/Project.js'
 import Task from '../models/Task.js'
 import { hasRoleAtLeast } from '../utils/accessControl.js'
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const backendRoot = path.resolve(__dirname, '..', '..')
+
+const parseMentions = mentions => {
+  if (!mentions) return []
+  if (Array.isArray(mentions)) return mentions
+  try {
+    const parsed = JSON.parse(mentions)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
 
 export const getComments = async (req, res, next) => {
   try {
@@ -25,7 +43,12 @@ export const getComments = async (req, res, next) => {
 export const createComment = async (req, res, next) => {
   try {
     const { body, project, task, replyTo, mentions } = req.body
-    const mentionIds = [...new Set((mentions || []).filter(Boolean).map(uid => uid.toString()))]
+    const cleanBody = (body || '').trim()
+    if (!cleanBody && !req.file) {
+      return res.status(400).json({ success: false, message: 'Message or file is required' })
+    }
+
+    const mentionIds = [...new Set(parseMentions(mentions).filter(Boolean).map(uid => uid.toString()))]
 
     let mentionProject = null
     if (task) {
@@ -45,10 +68,17 @@ export const createComment = async (req, res, next) => {
       : []
 
     const comment = await Comment.create({
-      body, project: project || null, task: task || null,
+      body: cleanBody, project: project || null, task: task || null,
       author: req.user._id,
       mentions: allowedMentionIds,
       replyTo: replyTo || { id: null, body: '', authorName: '' },
+      attachments: req.file ? [{
+        fileName: req.file.filename,
+        originalName: req.file.originalname,
+        fileUrl: `/uploads/comments/${req.file.filename}`,
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+      }] : [],
     })
 
     await comment.populate('author', 'name avatarStyleStyle username')
@@ -75,10 +105,39 @@ export const editComment = async (req, res, next) => {
     const comment = await Comment.findById(req.params.id)
     if (!comment) return res.status(404).json({ success: false, message: 'Comment not found' })
     if (comment.author.toString() !== req.user._id.toString()) return res.status(403).json({ success: false, message: 'Cannot edit others comments' })
-    comment.body = req.body.body
+    const cleanBody = (req.body.body || '').trim()
+    if (!cleanBody && !comment.attachments?.length) {
+      return res.status(400).json({ success: false, message: 'Message cannot be empty' })
+    }
+    comment.body = cleanBody
     comment.isEdited = true
     await comment.save()
     res.json({ success: true, comment })
+  } catch (error) {
+    next(error)
+  }
+}
+
+export const downloadCommentAttachment = async (req, res, next) => {
+  try {
+    const comment = await Comment.findOne({ _id: req.params.id, isDeleted: false })
+    if (!comment) return res.status(404).json({ success: false, message: 'Message not found' })
+
+    const attachment = comment.attachments.id(req.params.attachmentId)
+    if (!attachment) return res.status(404).json({ success: false, message: 'Attachment not found' })
+
+    const relativePath = attachment.fileUrl.replace(/^\/+/, '')
+    const candidates = [
+      path.resolve(backendRoot, relativePath),
+      path.resolve(process.cwd(), relativePath),
+      path.resolve(process.cwd(), 'metadesk-backend', relativePath),
+    ]
+    const filePath = candidates.find(candidate => fs.existsSync(candidate))
+    if (!filePath) {
+      return res.status(404).json({ success: false, message: 'Attachment is no longer available' })
+    }
+
+    res.download(filePath, attachment.originalName || attachment.fileName)
   } catch (error) {
     next(error)
   }

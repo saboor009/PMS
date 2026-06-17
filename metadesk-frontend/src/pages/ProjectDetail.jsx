@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ArrowLeft, Calendar, CheckSquare, FolderKanban, MessageSquare, Plus, Send, Trash2, UserCheck, Users, X } from 'lucide-react'
+import { ArrowLeft, Calendar, CheckSquare, Download, Edit3, FileText, FolderKanban, MessageSquare, Paperclip, Plus, Send, Trash2, UserCheck, Users, X } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { format } from 'date-fns'
 import api from '../services/api'
@@ -24,6 +24,11 @@ export default function ProjectDetail() {
   const [users, setUsers] = useState([])
   const [memberToAdd, setMemberToAdd] = useState('')
   const [message, setMessage] = useState('')
+  const [chatFile, setChatFile] = useState(null)
+  const [sendingMessage, setSendingMessage] = useState(false)
+  const [editingCommentId, setEditingCommentId] = useState(null)
+  const [editingMessage, setEditingMessage] = useState('')
+  const [downloadingAttachment, setDownloadingAttachment] = useState(null)
   const [loading, setLoading] = useState(true)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [createTaskOpen, setCreateTaskOpen] = useState(false)
@@ -86,13 +91,64 @@ export default function ProjectDetail() {
 
   const sendMessage = async e => {
     e.preventDefault()
-    if (!message.trim()) return
+    if (!message.trim() && !chatFile) return
+    setSendingMessage(true)
     try {
-      const res = await api.post('/comments', { project: id, body: message, mentions: getMentionIds() })
+      const formData = new FormData()
+      formData.append('project', id)
+      formData.append('body', message)
+      formData.append('mentions', JSON.stringify(getMentionIds()))
+      if (chatFile) formData.append('file', chatFile)
+      const res = await api.post('/comments', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
       setComments(prev => [...prev, res.data.comment])
       setMessage('')
+      setChatFile(null)
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to send')
+    } finally {
+      setSendingMessage(false)
+    }
+  }
+
+  const startEditComment = comment => {
+    setEditingCommentId(comment._id)
+    setEditingMessage(comment.body || '')
+  }
+
+  const cancelEditComment = () => {
+    setEditingCommentId(null)
+    setEditingMessage('')
+  }
+
+  const saveEditedComment = async comment => {
+    if (!editingMessage.trim() && !comment.attachments?.length) return toast.error('Message cannot be empty')
+    try {
+      const res = await api.put(`/comments/${comment._id}`, { body: editingMessage })
+      setComments(prev => prev.map(item => item._id === comment._id ? { ...item, ...res.data.comment, author: item.author, attachments: item.attachments } : item))
+      cancelEditComment()
+      toast.success('Message updated')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update message')
+    }
+  }
+
+  const downloadCommentAttachment = async (comment, attachment) => {
+    setDownloadingAttachment(attachment._id)
+    try {
+      const res = await api.get(`/comments/${comment._id}/attachments/${attachment._id}/download`, { responseType: 'blob' })
+      const fileUrl = window.URL.createObjectURL(new Blob([res.data], { type: attachment.mimeType || 'application/octet-stream' }))
+      const link = document.createElement('a')
+      link.href = fileUrl
+      link.download = attachment.originalName || attachment.fileName || 'message-file'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(fileUrl)
+      toast.success('Download started')
+    } catch (err) {
+      toast.error(await getDownloadErrorMessage(err))
+    } finally {
+      setDownloadingAttachment(null)
     }
   }
 
@@ -249,6 +305,7 @@ export default function ProjectDetail() {
               <div style={{ border: '1px dashed #BAD6F4', borderRadius: 10, padding: 24, color: '#98A2B3', textAlign: 'center', fontSize: 13 }}>No project messages yet</div>
             ) : comments.map(comment => {
               const mine = comment.author?._id === user?._id
+              const isEditing = editingCommentId === comment._id
               return (
                 <div key={comment._id} style={{ display: 'flex', gap: 9, alignItems: 'flex-start', flexDirection: mine ? 'row-reverse' : 'row' }}>
                   <Avatar name={comment.author?.name} avatar={comment.author?.avatar} size={30} />
@@ -256,15 +313,42 @@ export default function ProjectDetail() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3, justifyContent: mine ? 'flex-end' : 'flex-start' }}>
                       <span style={{ fontSize: 11.5, fontWeight: 800, color: '#101828' }}>{comment.author?.name || 'User'}</span>
                       <span style={{ fontSize: 10.5, color: '#98A2B3' }}>{new Date(comment.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      {comment.isEdited && <span style={{ fontSize: 10.5, color: '#98A2B3' }}>edited</span>}
+                      {mine && !isEditing && (
+                        <button type="button" onClick={() => startEditComment(comment)} title="Edit message" style={{ width: 22, height: 22, border: 'none', borderRadius: 7, background: 'transparent', color: '#2F85C8', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                          <Edit3 size={12} />
+                        </button>
+                      )}
                     </div>
-                    <p style={{ margin: 0, fontSize: 13, color: '#344054', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{comment.body}</p>
+                    {isEditing ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                        <textarea value={editingMessage} onChange={e => setEditingMessage(e.target.value)} rows={3} style={{ width: 260, maxWidth: '100%', border: '1.5px solid #DBEAFE', borderRadius: 8, padding: '8px 9px', fontSize: 13, fontFamily: 'inherit', color: '#344054', outline: 'none', resize: 'vertical' }} />
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+                          <button type="button" onClick={cancelEditComment} style={{ border: '1px solid #D0D5DD', background: '#fff', color: '#475467', borderRadius: 7, padding: '5px 8px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+                          <button type="button" onClick={() => saveEditedComment(comment)} style={{ border: 'none', background: '#2F85C8', color: '#fff', borderRadius: 7, padding: '5px 9px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>Save</button>
+                        </div>
+                      </div>
+                    ) : (
+                      comment.body && <p style={{ margin: 0, fontSize: 13, color: '#344054', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{comment.body}</p>
+                    )}
+                    {comment.attachments?.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: comment.body ? 8 : 0 }}>
+                        {comment.attachments.map(attachment => (
+                          <button key={attachment._id} type="button" onClick={() => downloadCommentAttachment(comment, attachment)} disabled={downloadingAttachment === attachment._id} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', border: '1px solid #BFDBFE', background: '#fff', color: '#101828', borderRadius: 8, padding: '7px 8px', cursor: downloadingAttachment === attachment._id ? 'wait' : 'pointer', textAlign: 'left', opacity: downloadingAttachment === attachment._id ? 0.7 : 1 }}>
+                            <FileText size={14} style={{ color: '#2F85C8', flexShrink: 0 }} />
+                            <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 700 }}>{attachment.originalName || attachment.fileName}</span>
+                            <Download size={13} style={{ color: '#F97316', flexShrink: 0 }} />
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )
             })}
           </div>
 
-          <form onSubmit={sendMessage} style={{ position: 'relative', display: 'flex', gap: 8, borderTop: '1px solid #F2F4F7', paddingTop: 12 }}>
+          <form onSubmit={sendMessage} style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid #F2F4F7', paddingTop: 12 }}>
             {mentionSuggestions.length > 0 && (
               <div style={{ position: 'absolute', left: 0, right: 48, bottom: 50, background: '#fff', border: '1px solid #DBEAFE', borderRadius: 10, boxShadow: '0 12px 28px rgba(16, 24, 40, 0.12)', padding: 6, zIndex: 2 }}>
                 {mentionSuggestions.map(member => (
@@ -275,8 +359,23 @@ export default function ProjectDetail() {
                 ))}
               </div>
             )}
-            <input value={message} onChange={e => setMessage(e.target.value)} placeholder="Message or @mention the project team..." style={{ flex: 1, border: '1.5px solid #DBEAFE', borderRadius: 9, padding: '9px 11px', fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
-            <button type="submit" className="btn-primary" style={{ padding: '9px 12px' }}><Send size={14} /></button>
+            {chatFile && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid #99F6E4', background: '#F0FDFA', color: '#0F766E', borderRadius: 8, padding: '7px 9px' }}>
+                <Paperclip size={13} style={{ flexShrink: 0 }} />
+                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 700 }}>{chatFile.name}</span>
+                <button type="button" onClick={() => setChatFile(null)} title="Remove file" style={{ width: 22, height: 22, border: 'none', borderRadius: 7, background: '#CCFBF1', color: '#0F766E', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                  <X size={12} />
+                </button>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input value={message} onChange={e => setMessage(e.target.value)} placeholder="Message or @mention the project team..." style={{ flex: 1, minWidth: 0, border: '1.5px solid #DBEAFE', borderRadius: 9, padding: '9px 11px', fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
+              <label title="Attach file" style={{ width: 38, height: 38, borderRadius: 9, border: '1.5px solid #DBEAFE', background: '#fff', color: '#2F85C8', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: sendingMessage ? 'not-allowed' : 'pointer', opacity: sendingMessage ? 0.6 : 1, flexShrink: 0 }}>
+                <Paperclip size={15} />
+                <input type="file" onChange={e => { setChatFile(e.target.files?.[0] || null); e.target.value = '' }} disabled={sendingMessage} style={{ display: 'none' }} />
+              </label>
+              <button type="submit" className="btn-primary" disabled={sendingMessage || (!message.trim() && !chatFile)} style={{ padding: '9px 12px' }}><Send size={14} /></button>
+            </div>
           </form>
         </div>
         </div>
@@ -355,6 +454,20 @@ export default function ProjectDetail() {
       )}
     </div>
   )
+}
+
+async function getDownloadErrorMessage(err) {
+  const data = err.response?.data
+  if (data instanceof Blob) {
+    try {
+      const text = await data.text()
+      const parsed = JSON.parse(text)
+      return parsed.message || 'Download failed'
+    } catch {
+      return 'Download failed'
+    }
+  }
+  return data?.message || 'Download failed'
 }
 
 function Metric({ icon: Icon, label, value }) {

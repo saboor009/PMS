@@ -5,6 +5,11 @@ import File from '../models/File.js'
 import { can, hasRoleAtLeast } from '../utils/accessControl.js'
 import fs from 'fs'
 import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const backendRoot = path.resolve(__dirname, '..', '..')
 
 const isProjectManager = (project, user) => project?.owner?.toString() === user._id.toString()
 
@@ -302,11 +307,14 @@ export const downloadTaskFile = async (req, res, next) => {
     if (!file.fileUrl) return res.status(404).json({ success: false, message: 'File path missing' })
 
     const relativePath = file.fileUrl.replace(/^\/+/, '')
-    const primaryPath = path.resolve(process.cwd(), relativePath)
-    const fallbackPath = path.resolve(process.cwd(), 'metadesk-backend', relativePath)
-    const filePath = fs.existsSync(primaryPath) ? primaryPath : fallbackPath
+    const candidates = [
+      path.resolve(backendRoot, relativePath),
+      path.resolve(process.cwd(), relativePath),
+      path.resolve(process.cwd(), 'metadesk-backend', relativePath),
+    ]
+    const filePath = candidates.find(candidate => fs.existsSync(candidate))
 
-    if (!fs.existsSync(filePath)) {
+    if (!filePath) {
       return res.status(404).json({ success: false, message: 'File is no longer available' })
     }
 
