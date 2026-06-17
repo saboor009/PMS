@@ -29,6 +29,9 @@ export default function ProjectDetail() {
   const [editingCommentId, setEditingCommentId] = useState(null)
   const [editingMessage, setEditingMessage] = useState('')
   const [downloadingAttachment, setDownloadingAttachment] = useState(null)
+  const [editingProjectDetails, setEditingProjectDetails] = useState(false)
+  const [projectDraft, setProjectDraft] = useState({ title: '', description: '' })
+  const [savingProjectDetails, setSavingProjectDetails] = useState(false)
   const [loading, setLoading] = useState(true)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [createTaskOpen, setCreateTaskOpen] = useState(false)
@@ -186,6 +189,35 @@ export default function ProjectDetail() {
     }
   }
 
+  const startEditProjectDetails = () => {
+    setProjectDraft({ title: project.title || '', description: project.description || '' })
+    setEditingProjectDetails(true)
+  }
+
+  const cancelEditProjectDetails = () => {
+    setEditingProjectDetails(false)
+    setProjectDraft({ title: '', description: '' })
+  }
+
+  const saveProjectDetails = async e => {
+    e.preventDefault()
+    if (!projectDraft.title.trim()) return toast.error('Project name is required')
+    setSavingProjectDetails(true)
+    try {
+      const res = await api.put(`/projects/${id}`, {
+        title: projectDraft.title.trim(),
+        description: projectDraft.description.trim(),
+      })
+      setProject(prev => ({ ...prev, ...res.data.project }))
+      setEditingProjectDetails(false)
+      toast.success('Project updated')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update project')
+    } finally {
+      setSavingProjectDetails(false)
+    }
+  }
+
   const completeProject = async () => {
     try {
       const res = await api.put(`/projects/${id}`, { status: 'completed', progress: 100 })
@@ -228,21 +260,39 @@ export default function ProjectDetail() {
         <div style={{ height: 8, background: project.coverColor || '#2F85C8' }} />
         <div style={{ padding: 24, display: 'grid', gridTemplateColumns: '1fr 280px', gap: 24 }}>
           <div>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
-                <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: '#101828' }}>{project.title}</h1>
-                <StatusBadge status={project.status} />
-                <PriorityBadge priority={project.priority} />
-              </div>
-              {canDeleteProjects && (
-                <button onClick={() => setConfirmDeleteOpen(true)} title="Delete project" style={{ width: 36, height: 36, borderRadius: 9, border: '1px solid #FEE2E2', background: '#FFF1F2', color: '#EF4444', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
-                  <Trash2 size={16} />
-                </button>
-              )}
-            </div>
-            <p style={{ margin: 0, color: '#475467', fontSize: 14, lineHeight: 1.6 }}>
-              {project.description || 'No description added yet.'}
-            </p>
+            {editingProjectDetails ? (
+              <form onSubmit={saveProjectDetails} style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                <input value={projectDraft.title} onChange={e => setProjectDraft(prev => ({ ...prev, title: e.target.value }))} style={{ border: '1.5px solid #DBEAFE', borderRadius: 9, padding: '9px 11px', fontSize: 18, fontWeight: 800, color: '#101828', fontFamily: 'inherit', outline: 'none' }} />
+                <textarea value={projectDraft.description} onChange={e => setProjectDraft(prev => ({ ...prev, description: e.target.value }))} placeholder="Add description..." rows={3} style={{ border: '1.5px solid #DBEAFE', borderRadius: 9, padding: '9px 11px', fontSize: 14, color: '#475467', fontFamily: 'inherit', outline: 'none', resize: 'vertical' }} />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="submit" className="btn-primary" disabled={savingProjectDetails} style={{ padding: '8px 12px' }}>{savingProjectDetails ? 'Saving...' : 'Save'}</button>
+                  <button type="button" onClick={cancelEditProjectDetails} className="btn-secondary" disabled={savingProjectDetails} style={{ padding: '8px 12px' }}>Cancel</button>
+                </div>
+              </form>
+            ) : (
+              <>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
+                    <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: '#101828' }}>{project.title}</h1>
+                    <StatusBadge status={project.status} />
+                    <PriorityBadge priority={project.priority} />
+                    {canManageThisProject && (
+                      <button type="button" onClick={startEditProjectDetails} title="Edit project" style={{ width: 32, height: 32, border: '1px solid #DBEAFE', borderRadius: 8, background: '#fff', color: '#2F85C8', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                        <Edit3 size={15} />
+                      </button>
+                    )}
+                  </div>
+                  {canDeleteProjects && (
+                    <button onClick={() => setConfirmDeleteOpen(true)} title="Delete project" style={{ width: 36, height: 36, borderRadius: 9, border: '1px solid #FEE2E2', background: '#FFF1F2', color: '#EF4444', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
+                <p style={{ margin: 0, color: '#475467', fontSize: 14, lineHeight: 1.6 }}>
+                  {project.description || 'No description added yet.'}
+                </p>
+              </>
+            )}
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

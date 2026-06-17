@@ -33,6 +33,9 @@ export default function TaskDetail() {
   const [editingCommentId, setEditingCommentId] = useState(null)
   const [editingMessage, setEditingMessage] = useState('')
   const [downloadingAttachment, setDownloadingAttachment] = useState(null)
+  const [editingTaskDetails, setEditingTaskDetails] = useState(false)
+  const [taskDraft, setTaskDraft] = useState({ title: '', description: '' })
+  const [savingTaskDetails, setSavingTaskDetails] = useState(false)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
@@ -137,6 +140,35 @@ export default function TaskDetail() {
       toast.success(projectId ? 'Task moved to project' : 'Task moved to standalone')
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to move task')
+    }
+  }
+
+  const startEditTaskDetails = () => {
+    setTaskDraft({ title: task.title || '', description: task.description || '' })
+    setEditingTaskDetails(true)
+  }
+
+  const cancelEditTaskDetails = () => {
+    setEditingTaskDetails(false)
+    setTaskDraft({ title: '', description: '' })
+  }
+
+  const saveTaskDetails = async e => {
+    e.preventDefault()
+    if (!taskDraft.title.trim()) return toast.error('Task name is required')
+    setSavingTaskDetails(true)
+    try {
+      const res = await api.put(`/tasks/${id}`, {
+        title: taskDraft.title.trim(),
+        description: taskDraft.description.trim(),
+      })
+      setTask(prev => ({ ...prev, ...res.data.task }))
+      setEditingTaskDetails(false)
+      toast.success('Task updated')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update task')
+    } finally {
+      setSavingTaskDetails(false)
     }
   }
 
@@ -287,6 +319,7 @@ export default function TaskDetail() {
   const canCompleteTasks = can(user, 'assignTasks') || isProjectManager
   const canAssignTasks = can(user, 'assignTasks') || isProjectManager
   const canDeleteTasks = can(user, 'deleteTasks')
+  const canEditTaskDetails = can(user, 'assignTasks') || isProjectManager || task.createdBy?._id === user?._id
   const assigneePool = isProjectManager && projectMembers.length ? projectMembers : users
   const availableAssignees = assigneePool.filter(member => !(task.assignedTo || []).some(existing => existing._id === member._id))
   const mentionQuery = getMentionQuery()
@@ -307,14 +340,32 @@ export default function TaskDetail() {
       <div className="card" style={{ padding: 22 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 18 }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', marginBottom: 9 }}>
-              <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: '#101828', lineHeight: 1.25 }}>{task.title}</h1>
-              <StatusBadge status={task.status} />
-              <PriorityBadge priority={task.priority} />
-            </div>
-            <p style={{ margin: 0, color: '#475467', fontSize: 14, lineHeight: 1.55, maxWidth: 880 }}>
-              {task.description || 'No description added yet.'}
-            </p>
+            {editingTaskDetails ? (
+              <form onSubmit={saveTaskDetails} style={{ display: 'flex', flexDirection: 'column', gap: 9, maxWidth: 880 }}>
+                <input value={taskDraft.title} onChange={e => setTaskDraft(prev => ({ ...prev, title: e.target.value }))} style={{ border: '1.5px solid #DBEAFE', borderRadius: 9, padding: '9px 11px', fontSize: 18, fontWeight: 800, color: '#101828', fontFamily: 'inherit', outline: 'none' }} />
+                <textarea value={taskDraft.description} onChange={e => setTaskDraft(prev => ({ ...prev, description: e.target.value }))} placeholder="Add description..." rows={3} style={{ border: '1.5px solid #DBEAFE', borderRadius: 9, padding: '9px 11px', fontSize: 14, color: '#475467', fontFamily: 'inherit', outline: 'none', resize: 'vertical' }} />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="submit" className="btn-primary" disabled={savingTaskDetails} style={{ padding: '8px 12px' }}>{savingTaskDetails ? 'Saving...' : 'Save'}</button>
+                  <button type="button" onClick={cancelEditTaskDetails} className="btn-secondary" disabled={savingTaskDetails} style={{ padding: '8px 12px' }}>Cancel</button>
+                </div>
+              </form>
+            ) : (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', marginBottom: 9 }}>
+                  <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: '#101828', lineHeight: 1.25 }}>{task.title}</h1>
+                  <StatusBadge status={task.status} />
+                  <PriorityBadge priority={task.priority} />
+                  {canEditTaskDetails && (
+                    <button type="button" onClick={startEditTaskDetails} title="Edit task" style={{ width: 32, height: 32, border: '1px solid #DBEAFE', borderRadius: 8, background: '#fff', color: '#2F85C8', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                      <Edit3 size={15} />
+                    </button>
+                  )}
+                </div>
+                <p style={{ margin: 0, color: '#475467', fontSize: 14, lineHeight: 1.55, maxWidth: 880 }}>
+                  {task.description || 'No description added yet.'}
+                </p>
+              </>
+            )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             <select value={task.status} onChange={e => updateStatus(e.target.value)} style={{ border: '1.5px solid #DBEAFE', background: '#fff', color: '#101828', borderRadius: 9, padding: '8px 10px', fontSize: 12.5, fontWeight: 700, outline: 'none', cursor: 'pointer' }}>
