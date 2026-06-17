@@ -26,6 +26,12 @@ const canManageProjectTask = async (task, user) => {
   return Boolean(await getManagedProject(task.project, user))
 }
 
+const isProjectMemberForTask = async (task, user) => {
+  if (!task.project) return false
+  const project = await Project.findOne({ _id: task.project, isDeleted: false }).select('members')
+  return Boolean(project?.members?.some(member => member.toString() === user._id.toString()))
+}
+
 export const getTasks = async (req, res, next) => {
   try {
     const { status, priority, project, scope, search, assignee } = req.query
@@ -143,9 +149,10 @@ export const updateTask = async (req, res, next) => {
     const { user } = req
     const isManager = hasRoleAtLeast(user, 'manager')
     const isProjectTaskManager = await canManageProjectTask(task, user)
+    const isProjectMember = await isProjectMemberForTask(task, user)
     const canComplete = can(user, 'assignTasks') || isProjectTaskManager
     const isAssignee = task.assignedTo.some(a => a.toString() === user._id.toString())
-    if (!isManager && !isAssignee && !isProjectTaskManager) return res.status(403).json({ success: false, message: 'Access denied' })
+    if (!isManager && !isAssignee && !isProjectTaskManager && !isProjectMember) return res.status(403).json({ success: false, message: 'Access denied' })
 
     const { status, title, description, priority, dueDate, estimatedHours, loggedHours, project, labels } = req.body
 
