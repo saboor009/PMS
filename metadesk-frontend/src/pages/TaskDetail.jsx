@@ -27,6 +27,7 @@ export default function TaskDetail() {
   const [subtaskTitle, setSubtaskTitle] = useState('')
   const [uploading, setUploading] = useState(false)
   const [downloadingFile, setDownloadingFile] = useState(null)
+  const [deletingFile, setDeletingFile] = useState(null)
   const [chatFile, setChatFile] = useState(null)
   const [sendingMessage, setSendingMessage] = useState(false)
   const [editingCommentId, setEditingCommentId] = useState(null)
@@ -203,6 +204,20 @@ export default function TaskDetail() {
     }
   }
 
+  const deleteFile = async file => {
+    if (!window.confirm(`Delete "${file.originalName || file.fileName}"?`)) return
+    setDeletingFile(file._id)
+    try {
+      await api.delete(`/tasks/${id}/files/${file._id}`)
+      setFiles(prev => prev.filter(item => item._id !== file._id))
+      toast.success('File deleted')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete file')
+    } finally {
+      setDeletingFile(null)
+    }
+  }
+
   const downloadCommentAttachment = async (comment, attachment) => {
     setDownloadingAttachment(attachment._id)
     try {
@@ -372,18 +387,28 @@ export default function TaskDetail() {
               <div style={{ border: '1px dashed #BAD6F4', borderRadius: 10, padding: 22, textAlign: 'center', color: '#98A2B3', fontSize: 13 }}>No files submitted yet</div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10 }}>
-                {files.map(file => (
-                  <button key={file._id} type="button" onClick={() => downloadFile(file)} disabled={downloadingFile === file._id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, border: '1px solid #99F6E4', borderRadius: 10, color: 'inherit', textDecoration: 'none', background: '#fff', boxShadow: '0 8px 20px rgba(15,118,110,0.09)', cursor: downloadingFile === file._id ? 'wait' : 'pointer', textAlign: 'left', width: '100%', opacity: downloadingFile === file._id ? 0.72 : 1 }}>
+                {files.map(file => {
+                  const canDeleteFile = file.uploadedBy?._id === user?._id || canDeleteTasks
+                  const isBusy = downloadingFile === file._id || deletingFile === file._id
+
+                  return (
+                  <div key={file._id} onClick={() => downloadFile(file)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, border: '1px solid #99F6E4', borderRadius: 10, color: 'inherit', textDecoration: 'none', background: '#fff', boxShadow: '0 8px 20px rgba(15,118,110,0.09)', cursor: isBusy ? 'wait' : 'pointer', textAlign: 'left', width: '100%', opacity: isBusy ? 0.72 : 1 }}>
                     <div style={{ width: 38, height: 38, borderRadius: 10, background: '#CCFBF1', color: '#0F766E', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FileText size={18} /></div>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#101828', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.originalName || file.fileName}</p>
                       <p style={{ margin: '3px 0 0', fontSize: 11.5, color: '#98A2B3' }}>{file.uploadedBy?.name || 'Uploaded'} • {formatDistanceToNow(new Date(file.createdAt), { addSuffix: true })}</p>
                     </div>
-                    <div title="Download file" style={{ width: 34, height: 34, borderRadius: 9, background: '#F97316', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <button type="button" onClick={e => { e.stopPropagation(); downloadFile(file) }} disabled={isBusy} title="Download file" style={{ width: 34, height: 34, border: 'none', borderRadius: 9, background: '#F97316', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isBusy ? 'wait' : 'pointer', flexShrink: 0 }}>
                       <Download size={16} />
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                    {canDeleteFile && (
+                      <button type="button" onClick={e => { e.stopPropagation(); deleteFile(file) }} disabled={isBusy} title="Delete file" style={{ width: 34, height: 34, border: '1px solid #FECACA', borderRadius: 9, background: '#FFF1F2', color: '#E11D48', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isBusy ? 'wait' : 'pointer', flexShrink: 0 }}>
+                        <Trash2 size={15} />
+                      </button>
+                    )}
+                  </div>
+                  )
+                })}
               </div>
             )}
           </div>

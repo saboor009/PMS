@@ -284,6 +284,28 @@ export default function Dashboard() {
 
 function TeamLoadSummary({ employeeStats, onViewAll }) {
   const employees = employeeStats.employees || []
+  const navigate = useNavigate()
+  const [selectedEmployee, setSelectedEmployee] = useState(null)
+  const [memberTasks, setMemberTasks] = useState([])
+  const [memberLoading, setMemberLoading] = useState(false)
+
+  const openMemberDetail = employee => {
+    setSelectedEmployee(employee)
+    setMemberTasks([])
+    setMemberLoading(true)
+    api.get(`/tasks?assignee=${employee._id}`)
+      .then(res => setMemberTasks(res.data.tasks || []))
+      .catch(err => {
+        console.error(err)
+        setMemberTasks([])
+      })
+      .finally(() => setMemberLoading(false))
+  }
+
+  const closeMemberDetail = () => {
+    setSelectedEmployee(null)
+    setMemberTasks([])
+  }
 
   return (
     <div className="card" style={{ padding: '18px 20px' }}>
@@ -302,7 +324,7 @@ function TeamLoadSummary({ employeeStats, onViewAll }) {
           {employees.map(employee => {
             const style = loadStyle(employee.load)
             return (
-              <div key={employee._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '10px 0', borderBottom: '1px solid #F2F4F7' }}>
+              <button key={employee._id} type="button" onClick={() => openMemberDetail(employee)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '10px 0', border: 'none', borderBottom: '1px solid #F2F4F7', background: 'transparent', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
                 <div style={{ minWidth: 0 }}>
                   <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#101828', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{employee.name}</p>
                   <p style={{ margin: '3px 0 0', fontSize: 11.5, color: '#98A2B3' }}>{employee.openTasks} open tasks</p>
@@ -310,11 +332,90 @@ function TeamLoadSummary({ employeeStats, onViewAll }) {
                 <span style={{ color: style.color, borderRadius: 99, padding: '2px 0', fontSize: 11.5, fontWeight: 800, textTransform: 'capitalize', flexShrink: 0 }}>
                   {employee.load}
                 </span>
-              </div>
+              </button>
             )
           })}
         </div>
       )}
+
+      {selectedEmployee && (
+        <MemberTaskModal
+          employee={selectedEmployee}
+          tasks={memberTasks}
+          loading={memberLoading}
+          onClose={closeMemberDetail}
+          onTaskOpen={taskId => navigate(`/tasks/${taskId}`)}
+        />
+      )}
+    </div>
+  )
+}
+
+function MemberTaskModal({ employee, tasks, loading, onClose, onTaskOpen }) {
+  const openTasks = tasks.filter(task => task.status !== 'done')
+  const phaseCounts = KANBAN_COLS.map(col => ({
+    ...col,
+    count: tasks.filter(task => task.status === col.key).length,
+  }))
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.38)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div onClick={e => e.stopPropagation()} className="card" style={{ width: 'min(760px, 100%)', maxHeight: '82vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px rgba(16,24,40,0.22)' }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid #EEF2F7', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#101828' }}>{employee.name}</h2>
+            <p style={{ margin: '5px 0 0', fontSize: 12.5, color: '#667085' }}>{employee.designation || employee.team || 'Team member'} - {openTasks.length} open tasks</p>
+          </div>
+          <button type="button" onClick={onClose} style={{ width: 32, height: 32, border: '1px solid #E4E7EC', borderRadius: 8, background: '#fff', color: '#667085', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>x</button>
+        </div>
+
+        <div style={{ padding: 20, overflowY: 'auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginBottom: 16 }}>
+            {phaseCounts.map(phase => (
+              <div key={phase.key} style={{ background: phase.bg, border: `1px solid ${phase.color}22`, borderRadius: 9, padding: '10px 11px' }}>
+                <p style={{ margin: 0, fontSize: 10.5, color: phase.color, fontWeight: 800, textTransform: 'uppercase' }}>{phase.label}</p>
+                <p style={{ margin: '4px 0 0', fontSize: 22, lineHeight: 1, color: '#101828', fontWeight: 800 }}>{phase.count}</p>
+              </div>
+            ))}
+          </div>
+
+          {loading ? (
+            <p style={{ margin: 0, padding: '22px 0', color: '#98A2B3', fontSize: 13, textAlign: 'center' }}>Loading assigned tasks...</p>
+          ) : tasks.length === 0 ? (
+            <p style={{ margin: 0, padding: '22px 0', color: '#98A2B3', fontSize: 13, textAlign: 'center' }}>No assigned tasks found</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {KANBAN_COLS.map(col => {
+                const phaseTasks = tasks.filter(task => task.status === col.key)
+                if (phaseTasks.length === 0) return null
+
+                return (
+                  <div key={col.key}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+                      <div style={{ width: 7, height: 7, borderRadius: '50%', background: col.dot }} />
+                      <h3 style={{ margin: 0, fontSize: 12, fontWeight: 800, color: '#475467', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{col.label}</h3>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                      {phaseTasks.map(task => (
+                        <button key={task._id} type="button" onClick={() => onTaskOpen(task._id)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, width: '100%', border: '1px solid #EEF2F7', borderRadius: 9, background: '#fff', padding: '10px 12px', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#101828', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.title}</p>
+                            <p style={{ margin: '3px 0 0', fontSize: 11.5, color: '#98A2B3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.project?.title || 'Standalone task'}</p>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                            <PriorityBadge priority={task.priority} />
+                            {task.dueDate && <span style={{ fontSize: 11, color: isPast(new Date(task.dueDate)) && task.status !== 'done' ? '#F04438' : '#98A2B3', fontWeight: 700 }}>{format(new Date(task.dueDate), 'MMM d')}</span>}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

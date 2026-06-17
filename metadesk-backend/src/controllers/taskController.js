@@ -293,7 +293,16 @@ export const uploadTaskFile = async (req, res, next) => {
 export const deleteTaskFile = async (req, res, next) => {
   try {
     const File = (await import('../models/File.js')).default
-    await File.findByIdAndUpdate(req.params.fileId, { isDeleted: true })
+    const file = await File.findOne({ _id: req.params.fileId, task: req.params.id, isDeleted: false })
+    if (!file) return res.status(404).json({ success: false, message: 'File not found' })
+
+    const isUploader = file.uploadedBy.toString() === req.user._id.toString()
+    if (!isUploader && !can(req.user, 'deleteTasks')) {
+      return res.status(403).json({ success: false, message: 'Only the uploader can delete this file' })
+    }
+
+    file.isDeleted = true
+    await file.save()
     res.json({ success: true, message: 'File deleted' })
   } catch (error) {
     next(error)
