@@ -20,6 +20,7 @@ export default function Dashboard() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [personalNote, setPersonalNote] = useState('')
+  const [expandedColumns, setExpandedColumns] = useState({})
   const { user } = useAuth()
   const navigate = useNavigate()
   const canViewEmployeeSummary = can(user, 'viewEmployeeSummary')
@@ -37,6 +38,10 @@ export default function Dashboard() {
     const value = e.target.value
     setPersonalNote(value)
     localStorage.setItem(personalNoteKey, value)
+  }
+
+  const toggleColumn = key => {
+    setExpandedColumns(prev => ({ ...prev, [key]: !prev[key] }))
   }
 
   if (loading) return <PageLoader />
@@ -92,7 +97,13 @@ export default function Dashboard() {
             </button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-            {KANBAN_COLS.map(({ key, label, color, bg, dot }) => (
+            {KANBAN_COLS.map(({ key, label, color, bg, dot }) => {
+              const columnTasks = tasksByStatus[key] || []
+              const isExpanded = !!expandedColumns[key]
+              const visibleTasks = isExpanded ? columnTasks : columnTasks.slice(0, 3)
+              const hiddenCount = columnTasks.length - 3
+
+              return (
               <div key={key} style={{ background: bg, borderRadius: 10, padding: 12, minHeight: 180 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -100,11 +111,11 @@ export default function Dashboard() {
                     <span style={{ fontSize: 11, fontWeight: 700, color: '#475467', textTransform: 'uppercase', letterSpacing: '0.6px' }}>{label}</span>
                   </div>
                   <span style={{ fontSize: 11, fontWeight: 700, color, background: '#fff', borderRadius: 99, padding: '1px 7px', border: `1px solid ${color}30` }}>
-                    {tasksByStatus[key]?.length || 0}
+                    {columnTasks.length}
                   </span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                  {(tasksByStatus[key] || []).slice(0, 3).map(task => (
+                  {visibleTasks.map(task => (
                     <div key={task._id} style={{
                       background: '#fff', borderRadius: 8, padding: '10px 11px',
                       border: '1px solid #F2F4F7', cursor: 'pointer',
@@ -132,14 +143,29 @@ export default function Dashboard() {
                       )}
                     </div>
                   ))}
-                  {tasksByStatus[key]?.length > 3 && (
-                    <p style={{ fontSize: 11, color: '#98A2B3', textAlign: 'center', margin: '3px 0 0' }}>
-                      +{tasksByStatus[key].length - 3} more
-                    </p>
+                  {columnTasks.length > 3 && (
+                    <button
+                      type="button"
+                      onClick={() => toggleColumn(key)}
+                      style={{
+                        border: 'none',
+                        background: 'transparent',
+                        color: '#7C8BA1',
+                        cursor: 'pointer',
+                        fontSize: 11,
+                        fontWeight: 600,
+                        lineHeight: 1.4,
+                        margin: '3px 0 0',
+                        padding: '4px 0',
+                        textAlign: 'center',
+                      }}
+                    >
+                      {isExpanded ? 'Show less' : `+${hiddenCount} more`}
+                    </button>
                   )}
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         </div>
 
