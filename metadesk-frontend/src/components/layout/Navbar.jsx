@@ -33,7 +33,12 @@ export default function Navbar({ notificationCount = 0, onMenuClick, isMobile = 
   const [results, setResults] = useState({ tasks: [], projects: [] })
   const [showResults, setShowResults] = useState(false)
   const [searching, setSearching] = useState(false)
+  const [showNotifications, setShowNotifications] = useState(false)
+  const [notifications, setNotifications] = useState([])
+  const [notificationsLoading, setNotificationsLoading] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(notificationCount)
   const searchRef = useRef(null)
+  const notificationRef = useRef(null)
 
   const path = '/' + location.pathname.split('/')[1]
   const page = PAGE_TITLES[path] || { title: 'Metadesk' }
@@ -42,9 +47,16 @@ export default function Navbar({ notificationCount = 0, onMenuClick, isMobile = 
   useEffect(() => {
     const handler = (e) => {
       if (searchRef.current && !searchRef.current.contains(e.target)) setShowResults(false)
+      if (notificationRef.current && !notificationRef.current.contains(e.target)) setShowNotifications(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  useEffect(() => {
+    api.get('/notifications/unread-count')
+      .then(res => setUnreadCount(res.data.count || 0))
+      .catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -78,6 +90,48 @@ export default function Navbar({ notificationCount = 0, onMenuClick, isMobile = 
     navigate(path)
     setQuery('')
     setShowResults(false)
+    setShowNotifications(false)
+  }
+
+  const targetForNotification = notification => {
+    if (notification.link) return notification.link
+    if (notification.type === 'direct_message') return '/messages'
+    if (notification.type === 'account_request') return '/team?tab=requests'
+    if (notification.type?.startsWith('project')) return '/projects'
+    if (notification.type?.startsWith('task')) return '/tasks'
+    return '/notifications'
+  }
+
+  const loadNotifications = async () => {
+    setNotificationsLoading(true)
+    try {
+      const res = await api.get('/notifications')
+      setNotifications(res.data.notifications || [])
+      setUnreadCount((res.data.notifications || []).filter(item => !item.isRead).length)
+    } catch (err) {
+      console.error(err)
+      setNotifications([])
+    } finally {
+      setNotificationsLoading(false)
+    }
+  }
+
+  const toggleNotifications = () => {
+    setShowNotifications(prev => {
+      const next = !prev
+      if (next) loadNotifications()
+      return next
+    })
+  }
+
+  const openNotification = async notification => {
+    if (!notification.isRead) {
+      try {
+        await api.put(`/notifications/${notification._id}/read`)
+        setUnreadCount(prev => Math.max(prev - 1, 0))
+      } catch {}
+    }
+    goTo(targetForNotification(notification))
   }
 
   const hasResults = results.tasks.length > 0 || results.projects.length > 0
@@ -251,38 +305,85 @@ export default function Navbar({ notificationCount = 0, onMenuClick, isMobile = 
           </div>
         )}
 
-        <button
-          onClick={() => navigate('/notifications')}
-          style={{
-            position: 'relative',
-            width: 38,
-            height: 38,
-            borderRadius: 9,
-            border: '1px solid #EAECF0',
-            background: '#fff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            color: '#475467',
-            transition: 'all 0.15s',
-          }}
-          title="Notifications"
-        >
-          <Bell size={17} />
-          {notificationCount > 0 && (
-            <span style={{
+        <div ref={notificationRef} style={{ position: 'relative' }}>
+          <button
+            onClick={toggleNotifications}
+            style={{
+              position: 'relative',
+              width: 38,
+              height: 38,
+              borderRadius: 9,
+              border: '1px solid #EAECF0',
+              background: showNotifications ? '#EFF6FF' : '#fff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: showNotifications ? '#2F85C8' : '#475467',
+              transition: 'all 0.15s',
+            }}
+            title="Notifications"
+          >
+            <Bell size={17} />
+            {unreadCount > 0 && (
+              <span style={{
+                position: 'absolute',
+                top: 6,
+                right: 6,
+                minWidth: 15,
+                height: 15,
+                borderRadius: 99,
+                background: '#F04438',
+                border: '2px solid #fff',
+                color: '#fff',
+                fontSize: 9,
+                fontWeight: 800,
+                lineHeight: '11px',
+                textAlign: 'center',
+                padding: '0 3px',
+              }}>{unreadCount > 9 ? '9+' : unreadCount}</span>
+            )}
+          </button>
+
+          {showNotifications && (
+            <div style={{
               position: 'absolute',
-              top: 7,
-              right: 7,
-              width: 7,
-              height: 7,
-              borderRadius: '50%',
-              background: '#F04438',
-              border: '2px solid #fff',
-            }} />
+              top: 'calc(100% + 8px)',
+              right: 0,
+              width: 340,
+              maxWidth: 'calc(100vw - 24px)',
+              background: '#fff',
+              border: '1px solid #EAECF0',
+              borderRadius: 12,
+              boxShadow: '0 16px 40px rgba(16,24,40,0.14)',
+              zIndex: 60,
+              overflow: 'hidden',
+            }}>
+              <div style={{ padding: '12px 14px', borderBottom: '1px solid #F2F4F7', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <span style={{ fontSize: 13.5, fontWeight: 800, color: '#101828' }}>Notifications</span>
+                <button type="button" onClick={() => goTo('/notifications')} style={{ border: 'none', background: 'transparent', color: '#2F85C8', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}>View all</button>
+              </div>
+
+              <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+                {notificationsLoading ? (
+                  <div style={{ padding: '18px 14px', fontSize: 13, color: '#98A2B3', textAlign: 'center' }}>Loading notifications...</div>
+                ) : notifications.length === 0 ? (
+                  <div style={{ padding: '20px 14px', fontSize: 13, color: '#98A2B3', textAlign: 'center' }}>No notifications yet</div>
+                ) : (
+                  notifications.slice(0, 8).map(notification => (
+                    <button key={notification._id} type="button" onClick={() => openNotification(notification)} style={{ width: '100%', border: 'none', borderBottom: '1px solid #F2F4F7', background: notification.isRead ? '#fff' : '#F8FAFF', padding: '11px 14px', display: 'flex', alignItems: 'flex-start', gap: 10, textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: notification.isRead ? '#D0D5DD' : '#2F85C8', marginTop: 5, flexShrink: 0 }} />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: notification.isRead ? 600 : 800, color: '#101828', lineHeight: 1.35 }}>{notification.message}</p>
+                        <p style={{ margin: '3px 0 0', fontSize: 11, color: '#98A2B3' }}>{notification.sender?.name || 'Metadesk'} - {new Date(notification.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
           )}
-        </button>
+        </div>
 
         {!isMobile && <div style={{ width: 1, height: 28, background: '#EAECF0' }} />}
 
