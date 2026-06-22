@@ -22,6 +22,7 @@ export default function TaskDetail() {
   const [users, setUsers] = useState([])
   const [projects, setProjects] = useState([])
   const [assigneeToAdd, setAssigneeToAdd] = useState('')
+  const [watcherToAdd, setWatcherToAdd] = useState('')
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [subtaskTitle, setSubtaskTitle] = useState('')
@@ -293,6 +294,29 @@ export default function TaskDetail() {
     }
   }
 
+  const addWatcher = async e => {
+    e.preventDefault()
+    if (!watcherToAdd) return
+    try {
+      const res = await api.post(`/tasks/${id}/watchers`, { userId: watcherToAdd })
+      setTask(prev => ({ ...prev, watchers: res.data.task.watchers }))
+      setWatcherToAdd('')
+      toast.success('Watcher added')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to add watcher')
+    }
+  }
+
+  const removeWatcher = async userId => {
+    try {
+      await api.delete(`/tasks/${id}/watchers/${userId}`)
+      setTask(prev => ({ ...prev, watchers: (prev.watchers || []).filter(w => w._id !== userId) }))
+      toast.success('Watcher removed')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to remove watcher')
+    }
+  }
+
   const deleteTask = async () => {
     setDeleting(true)
     try {
@@ -321,8 +345,10 @@ export default function TaskDetail() {
   const canAssignTasks = can(user, 'assignTasks') || isProjectManager || isTaskCreator
   const canDeleteTasks = can(user, 'deleteTasks') || isProjectManager
   const canEditTaskDetails = can(user, 'assignTasks') || isProjectManager || isTaskCreator
+  const canManageWatchers = can(user, 'assignTasks') || isProjectManager || isTaskCreator
   const assigneePool = isProjectManager && projectMembers.length ? projectMembers : users
   const availableAssignees = assigneePool.filter(member => !(task.assignedTo || []).some(existing => existing._id === member._id))
+  const availableWatchers = users.filter(u => !(task.watchers || []).some(w => w._id === u._id) && u._id !== task.createdBy?._id)
   const mentionQuery = getMentionQuery()
   const mentionSuggestions = mentionQuery === null
     ? []
@@ -585,6 +611,35 @@ export default function TaskDetail() {
                         <p style={{ margin: '2px 0 0', fontSize: 11, color: '#98A2B3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{member.designation || 'Assignee'}</p>
                       </div>
                       <button onClick={() => removeAssignee(member._id)} title="Remove assignee" style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #FEE2E2', background: '#fff', color: '#F04438', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #EEF2F7' }}>
+              <p style={{ margin: '0 0 10px', fontSize: 11.5, color: '#98A2B3', fontWeight: 700 }}>Watchers</p>
+              {(task.watchers || []).length ? <AvatarGroup users={task.watchers} size={32} max={6} /> : <p style={{ margin: 0, color: '#98A2B3', fontSize: 13 }}>No watchers</p>}
+            </div>
+            {canManageWatchers && (
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #EEF2F7' }}>
+                <form onSubmit={addWatcher} style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  <select value={watcherToAdd} onChange={e => setWatcherToAdd(e.target.value)} style={{ flex: 1, minWidth: 0, border: '1.5px solid #DBEAFE', borderRadius: 9, padding: '8px 10px', fontSize: 12.5, color: '#344054', outline: 'none', background: '#fff' }}>
+                    <option value="">Add watcher...</option>
+                    {availableWatchers.map(u => <option key={u._id} value={u._id}>{u.name}</option>)}
+                  </select>
+                  <button type="submit" className="btn-primary" style={{ padding: '8px 10px' }}><Plus size={14} /></button>
+                </form>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {(task.watchers || []).map(w => (
+                    <div key={w._id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 0', borderTop: '1px solid #F2F4F7' }}>
+                      <Avatar name={w.name} avatar={w.avatar} size={28} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: '#101828', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.name}</p>
+                        <p style={{ margin: '2px 0 0', fontSize: 11, color: '#98A2B3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.designation || 'Watcher'}</p>
+                      </div>
+                      <button onClick={() => removeWatcher(w._id)} title="Remove watcher" style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #FEE2E2', background: '#fff', color: '#F04438', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
                         <X size={13} />
                       </button>
                     </div>

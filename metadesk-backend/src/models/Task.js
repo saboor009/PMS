@@ -11,6 +11,7 @@ const taskSchema = new mongoose.Schema({
   project: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', default: null },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   assignedTo: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  watchers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   status: { type: String, enum: ['todo', 'in_progress', 'review', 'done'], default: 'todo' },
   priority: { type: String, enum: ['low', 'medium', 'high', 'critical'], default: 'medium' },
   dueDate: { type: Date },

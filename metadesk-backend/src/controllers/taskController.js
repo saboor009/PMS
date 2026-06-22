@@ -49,7 +49,7 @@ export const getTasks = async (req, res, next) => {
       }
     }
     else if (!hasRoleAtLeast(user, 'manager')) {
-      filter.$or = [{ assignedTo: user._id }, { createdBy: user._id }]
+      filter.$or = [{ assignedTo: user._id }, { createdBy: user._id }, { watchers: user._id }]
     }
 
     if (status) filter.status = status
@@ -77,6 +77,7 @@ export const getTask = async (req, res, next) => {
   try {
     const task = await Task.findOne({ _id: req.params.id, isDeleted: false })
       .populate('assignedTo', 'name avatarStyleStyle username designation')
+      .populate('watchers', 'name avatarStyleStyle username designation')
       .populate('createdBy', 'name avatarStyleStyle username')
       .populate('project', 'title members')
 
@@ -336,6 +337,42 @@ export const downloadTaskFile = async (req, res, next) => {
     }
 
     res.download(filePath, file.originalName || file.fileName)
+  } catch (error) {
+    next(error)
+  }
+}
+
+export const addWatcher = async (req, res, next) => {
+  try {
+    const { userId } = req.body
+    const task = await Task.findOne({ _id: req.params.id, isDeleted: false })
+    if (!task) return res.status(404).json({ success: false, message: 'Task not found' })
+    const managedProject = await getManagedProject(task.project, req.user)
+    const isTaskCreator = task.createdBy?.toString() === req.user._id.toString()
+    if (!can(req.user, 'assignTasks') && !managedProject && !isTaskCreator) {
+      return res.status(403).json({ success: false, message: 'You do not have permission to add watchers' })
+    }
+    if (!task.watchers.some(w => w.toString() === userId.toString())) task.watchers.push(userId)
+    await task.save()
+    await task.populate('watchers', 'name avatarStyleStyle username designation')
+    res.json({ success: true, task })
+  } catch (error) {
+    next(error)
+  }
+}
+
+export const removeWatcher = async (req, res, next) => {
+  try {
+    const task = await Task.findOne({ _id: req.params.id, isDeleted: false })
+    if (!task) return res.status(404).json({ success: false, message: 'Task not found' })
+    const managedProject = await getManagedProject(task.project, req.user)
+    const isTaskCreator = task.createdBy?.toString() === req.user._id.toString()
+    if (!can(req.user, 'assignTasks') && !managedProject && !isTaskCreator) {
+      return res.status(403).json({ success: false, message: 'You do not have permission to remove watchers' })
+    }
+    task.watchers = task.watchers.filter(w => w.toString() !== req.params.userId)
+    await task.save()
+    res.json({ success: true, message: 'Watcher removed' })
   } catch (error) {
     next(error)
   }
