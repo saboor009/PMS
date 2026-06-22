@@ -199,6 +199,12 @@ export const updateTask = async (req, res, next) => {
 
 export const deleteTask = async (req, res, next) => {
   try {
+    const task = await Task.findOne({ _id: req.params.id, isDeleted: false })
+    if (!task) return res.status(404).json({ success: false, message: 'Task not found' })
+    const managedProject = await getManagedProject(task.project, req.user)
+    if (!can(req.user, 'deleteTasks') && !managedProject) {
+      return res.status(403).json({ success: false, message: 'You do not have permission to delete tasks' })
+    }
     await Task.findByIdAndUpdate(req.params.id, { isDeleted: true })
     res.json({ success: true, message: 'Task deleted' })
   } catch (error) {

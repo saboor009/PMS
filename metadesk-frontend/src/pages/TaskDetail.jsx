@@ -318,7 +318,7 @@ export default function TaskDetail() {
   const isProjectManager = currentProject?.owner?._id === user?._id
   const canCompleteTasks = can(user, 'assignTasks') || isProjectManager
   const canAssignTasks = can(user, 'assignTasks') || isProjectManager
-  const canDeleteTasks = can(user, 'deleteTasks')
+  const canDeleteTasks = can(user, 'deleteTasks') || isProjectManager
   const canEditTaskDetails = can(user, 'assignTasks') || isProjectManager || task.createdBy?._id === user?._id
   const assigneePool = isProjectManager && projectMembers.length ? projectMembers : users
   const availableAssignees = assigneePool.filter(member => !(task.assignedTo || []).some(existing => existing._id === member._id))
