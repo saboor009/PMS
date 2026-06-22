@@ -49,7 +49,7 @@ export const getTasks = async (req, res, next) => {
       }
     }
     else if (!hasRoleAtLeast(user, 'manager')) {
-      filter.$or = [{ assignedTo: user._id }, { createdBy: user._id }, { watchers: user._id }]
+      filter.$or = [{ assignedTo: user._id }, { createdBy: user._id }, { taskManagers: user._id }]
     }
 
     if (status) filter.status = status
@@ -77,7 +77,7 @@ export const getTask = async (req, res, next) => {
   try {
     const task = await Task.findOne({ _id: req.params.id, isDeleted: false })
       .populate('assignedTo', 'name avatarStyleStyle username designation')
-      .populate('watchers', 'name avatarStyleStyle username designation')
+      .populate('taskManagers', 'name avatarStyleStyle username designation')
       .populate('createdBy', 'name avatarStyleStyle username')
       .populate('project', 'title members')
 
@@ -342,7 +342,7 @@ export const downloadTaskFile = async (req, res, next) => {
   }
 }
 
-export const addWatcher = async (req, res, next) => {
+export const addTaskManager = async (req, res, next) => {
   try {
     const { userId } = req.body
     const task = await Task.findOne({ _id: req.params.id, isDeleted: false })
@@ -350,29 +350,59 @@ export const addWatcher = async (req, res, next) => {
     const managedProject = await getManagedProject(task.project, req.user)
     const isTaskCreator = task.createdBy?.toString() === req.user._id.toString()
     if (!can(req.user, 'assignTasks') && !managedProject && !isTaskCreator) {
-      return res.status(403).json({ success: false, message: 'You do not have permission to add watchers' })
+      return res.status(403).json({ success: false, message: 'You do not have permission to add task managers' })
     }
-    if (!task.watchers.some(w => w.toString() === userId.toString())) task.watchers.push(userId)
+    if (!task.taskManagers.some(m => m.toString() === userId.toString())) task.taskManagers.push(userId)
     await task.save()
-    await task.populate('watchers', 'name avatarStyleStyle username designation')
+    await task.populate('taskManagers', 'name avatarStyleStyle username designation')
     res.json({ success: true, task })
   } catch (error) {
     next(error)
   }
 }
 
-export const removeWatcher = async (req, res, next) => {
+export const removeTaskManager = async (req, res, next) => {
   try {
     const task = await Task.findOne({ _id: req.params.id, isDeleted: false })
     if (!task) return res.status(404).json({ success: false, message: 'Task not found' })
     const managedProject = await getManagedProject(task.project, req.user)
     const isTaskCreator = task.createdBy?.toString() === req.user._id.toString()
     if (!can(req.user, 'assignTasks') && !managedProject && !isTaskCreator) {
-      return res.status(403).json({ success: false, message: 'You do not have permission to remove watchers' })
+      return res.status(403).json({ success: false, message: 'You do not have permission to remove task managers' })
     }
-    task.watchers = task.watchers.filter(w => w.toString() !== req.params.userId)
+    task.taskManagers = task.taskManagers.filter(m => m.toString() !== req.params.userId)
     await task.save()
-    res.json({ success: true, message: 'Watcher removed' })
+    res.json({ success: true, message: 'Task manager removed' })
+  } catch (error) {
+    next(error)
+  }
+}
+
+export const reviewTask = async (req, res, next) => {
+  try {
+    const { action } = req.body // 'submit' | 'approve' | 'reject'
+    const task = await Task.findOne({ _id: req.params.id, isDeleted: false })
+    if (!task) return res.status(404).json({ success: false, message: 'Task not found' })
+    const isTaskCreator = task.createdBy?.toString() === req.user._id.toString()
+    const isTaskManager = task.taskManagers.some(m => m.toString() === req.user._id.toString())
+    const canGloballyApprove = can(req.user, 'manageProjects') || hasRoleAtLeast(req.user, 'admin')
+
+    if (action === 'submit') {
+      if (!isTaskCreator) return res.status(403).json({ success: false, message: 'Only the task creator can submit for approval' })
+      if (!task.taskManagers.length) return res.status(400).json({ success: false, message: 'Add a task manager before submitting for approval' })
+      task.approvalStatus = 'pending'
+    } else if (action === 'approve') {
+      if (!isTaskManager && !canGloballyApprove) return res.status(403).json({ success: false, message: 'Only assigned task managers can approve' })
+      task.approvalStatus = 'approved'
+    } else if (action === 'reject') {
+      if (!isTaskManager && !canGloballyApprove) return res.status(403).json({ success: false, message: 'Only assigned task managers can reject' })
+      task.approvalStatus = 'rejected'
+    } else {
+      return res.status(400).json({ success: false, message: 'Invalid action' })
+    }
+
+    await task.save()
+    res.json({ success: true, approvalStatus: task.approvalStatus })
   } catch (error) {
     next(error)
   }

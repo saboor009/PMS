@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Calendar, CheckCircle2, Clock, Download, Edit3, FileText, FolderKanban, MessageSquare, Paperclip, Plus, Send, Trash2, Upload, UserCircle, X } from 'lucide-react'
+import { ArrowLeft, Calendar, CheckCircle2, Clock, Download, Edit3, FileText, FolderKanban, MessageSquare, Paperclip, Plus, Send, ShieldCheck, ThumbsDown, ThumbsUp, Trash2, Upload, UserCircle, X } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { format, formatDistanceToNow, isPast } from 'date-fns'
 import api from '../services/api'
@@ -22,7 +22,7 @@ export default function TaskDetail() {
   const [users, setUsers] = useState([])
   const [projects, setProjects] = useState([])
   const [assigneeToAdd, setAssigneeToAdd] = useState('')
-  const [watcherToAdd, setWatcherToAdd] = useState('')
+  const [taskManagerToAdd, setTaskManagerToAdd] = useState('')
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [subtaskTitle, setSubtaskTitle] = useState('')
@@ -294,26 +294,36 @@ export default function TaskDetail() {
     }
   }
 
-  const addWatcher = async e => {
+  const addTaskManager = async e => {
     e.preventDefault()
-    if (!watcherToAdd) return
+    if (!taskManagerToAdd) return
     try {
-      const res = await api.post(`/tasks/${id}/watchers`, { userId: watcherToAdd })
-      setTask(prev => ({ ...prev, watchers: res.data.task.watchers }))
-      setWatcherToAdd('')
-      toast.success('Watcher added')
+      const res = await api.post(`/tasks/${id}/task-managers`, { userId: taskManagerToAdd })
+      setTask(prev => ({ ...prev, taskManagers: res.data.task.taskManagers }))
+      setTaskManagerToAdd('')
+      toast.success('Task manager added')
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to add watcher')
+      toast.error(err.response?.data?.message || 'Failed to add task manager')
     }
   }
 
-  const removeWatcher = async userId => {
+  const removeTaskManager = async userId => {
     try {
-      await api.delete(`/tasks/${id}/watchers/${userId}`)
-      setTask(prev => ({ ...prev, watchers: (prev.watchers || []).filter(w => w._id !== userId) }))
-      toast.success('Watcher removed')
+      await api.delete(`/tasks/${id}/task-managers/${userId}`)
+      setTask(prev => ({ ...prev, taskManagers: (prev.taskManagers || []).filter(m => m._id !== userId) }))
+      toast.success('Task manager removed')
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to remove watcher')
+      toast.error(err.response?.data?.message || 'Failed to remove task manager')
+    }
+  }
+
+  const reviewTask = async action => {
+    try {
+      const res = await api.post(`/tasks/${id}/review`, { action })
+      setTask(prev => ({ ...prev, approvalStatus: res.data.approvalStatus }))
+      toast.success(action === 'submit' ? 'Submitted for approval' : action === 'approve' ? 'Task approved' : 'Task rejected')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed')
     }
   }
 
@@ -345,10 +355,11 @@ export default function TaskDetail() {
   const canAssignTasks = can(user, 'assignTasks') || isProjectManager || isTaskCreator
   const canDeleteTasks = can(user, 'deleteTasks') || isProjectManager
   const canEditTaskDetails = can(user, 'assignTasks') || isProjectManager || isTaskCreator
-  const canManageWatchers = can(user, 'assignTasks') || isProjectManager || isTaskCreator
+  const canManageTaskManagers = can(user, 'assignTasks') || isProjectManager || isTaskCreator
+  const isAssignedTaskManager = (task.taskManagers || []).some(m => m._id === user?._id)
   const assigneePool = isProjectManager && projectMembers.length ? projectMembers : users
   const availableAssignees = assigneePool.filter(member => !(task.assignedTo || []).some(existing => existing._id === member._id))
-  const availableWatchers = users.filter(u => !(task.watchers || []).some(w => w._id === u._id) && u._id !== task.createdBy?._id)
+  const availableTaskManagers = users.filter(u => !(task.taskManagers || []).some(m => m._id === u._id) && u._id !== task.createdBy?._id)
   const mentionQuery = getMentionQuery()
   const mentionSuggestions = mentionQuery === null
     ? []
@@ -382,6 +393,7 @@ export default function TaskDetail() {
                   <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: '#101828', lineHeight: 1.25 }}>{task.title}</h1>
                   <StatusBadge status={task.status} />
                   <PriorityBadge priority={task.priority} />
+                  {task.approvalStatus && task.approvalStatus !== 'none' && <StatusBadge status={task.approvalStatus} />}
                   {canEditTaskDetails && (
                     <button type="button" onClick={startEditTaskDetails} title="Edit task" style={{ width: 32, height: 32, border: '1px solid #DBEAFE', borderRadius: 8, background: '#fff', color: '#2F85C8', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                       <Edit3 size={15} />
@@ -401,6 +413,21 @@ export default function TaskDetail() {
               <option value="review">In Review</option>
               {canCompleteTasks && <option value="done">Done</option>}
             </select>
+            {isTaskCreator && (task.taskManagers || []).length > 0 && task.approvalStatus === 'none' && (
+              <button onClick={() => reviewTask('submit')} title="Submit for approval" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 9, border: '1px solid #2F85C8', background: '#EFF6FF', color: '#2F85C8', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                <ShieldCheck size={14} /> Submit for Approval
+              </button>
+            )}
+            {isAssignedTaskManager && task.approvalStatus === 'pending' && (
+              <>
+                <button onClick={() => reviewTask('approve')} title="Approve task" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '8px 12px', borderRadius: 9, border: '1px solid #ABEFC6', background: '#F6FEF9', color: '#027A48', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                  <ThumbsUp size={14} /> Approve
+                </button>
+                <button onClick={() => reviewTask('reject')} title="Reject task" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '8px 12px', borderRadius: 9, border: '1px solid #FECDCA', background: '#FEF3F2', color: '#B42318', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                  <ThumbsDown size={14} /> Reject
+                </button>
+              </>
+            )}
             {canDeleteTasks && (
               <button onClick={() => setConfirmDeleteOpen(true)} title="Delete task" style={{ width: 36, height: 36, borderRadius: 9, border: '1px solid #FEE2E2', background: '#FFF1F2', color: '#EF4444', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                 <Trash2 size={16} />
@@ -619,27 +646,27 @@ export default function TaskDetail() {
               </div>
             )}
             <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #EEF2F7' }}>
-              <p style={{ margin: '0 0 10px', fontSize: 11.5, color: '#98A2B3', fontWeight: 700 }}>Watchers</p>
-              {(task.watchers || []).length ? <AvatarGroup users={task.watchers} size={32} max={6} /> : <p style={{ margin: 0, color: '#98A2B3', fontSize: 13 }}>No watchers</p>}
+              <p style={{ margin: '0 0 10px', fontSize: 11.5, color: '#98A2B3', fontWeight: 700 }}>Task Managers</p>
+              {(task.taskManagers || []).length ? <AvatarGroup users={task.taskManagers} size={32} max={6} /> : <p style={{ margin: 0, color: '#98A2B3', fontSize: 13 }}>No task managers</p>}
             </div>
-            {canManageWatchers && (
+            {canManageTaskManagers && (
               <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #EEF2F7' }}>
-                <form onSubmit={addWatcher} style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                  <select value={watcherToAdd} onChange={e => setWatcherToAdd(e.target.value)} style={{ flex: 1, minWidth: 0, border: '1.5px solid #DBEAFE', borderRadius: 9, padding: '8px 10px', fontSize: 12.5, color: '#344054', outline: 'none', background: '#fff' }}>
-                    <option value="">Add watcher...</option>
-                    {availableWatchers.map(u => <option key={u._id} value={u._id}>{u.name}</option>)}
+                <form onSubmit={addTaskManager} style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  <select value={taskManagerToAdd} onChange={e => setTaskManagerToAdd(e.target.value)} style={{ flex: 1, minWidth: 0, border: '1.5px solid #DBEAFE', borderRadius: 9, padding: '8px 10px', fontSize: 12.5, color: '#344054', outline: 'none', background: '#fff' }}>
+                    <option value="">Add task manager...</option>
+                    {availableTaskManagers.map(u => <option key={u._id} value={u._id}>{u.name}</option>)}
                   </select>
                   <button type="submit" className="btn-primary" style={{ padding: '8px 10px' }}><Plus size={14} /></button>
                 </form>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {(task.watchers || []).map(w => (
-                    <div key={w._id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 0', borderTop: '1px solid #F2F4F7' }}>
-                      <Avatar name={w.name} avatar={w.avatar} size={28} />
+                  {(task.taskManagers || []).map(m => (
+                    <div key={m._id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 0', borderTop: '1px solid #F2F4F7' }}>
+                      <Avatar name={m.name} avatar={m.avatar} size={28} />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: '#101828', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.name}</p>
-                        <p style={{ margin: '2px 0 0', fontSize: 11, color: '#98A2B3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.designation || 'Watcher'}</p>
+                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: '#101828', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</p>
+                        <p style={{ margin: '2px 0 0', fontSize: 11, color: '#98A2B3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.designation || 'Task Manager'}</p>
                       </div>
-                      <button onClick={() => removeWatcher(w._id)} title="Remove watcher" style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #FEE2E2', background: '#fff', color: '#F04438', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                      <button onClick={() => removeTaskManager(m._id)} title="Remove task manager" style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #FEE2E2', background: '#fff', color: '#F04438', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
                         <X size={13} />
                       </button>
                     </div>
