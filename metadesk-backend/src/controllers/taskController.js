@@ -147,9 +147,10 @@ export const updateTask = async (req, res, next) => {
     const isManager = hasRoleAtLeast(user, 'manager')
     const isProjectTaskManager = await canManageProjectTask(task, user)
     const isProjectMember = await isProjectMemberForTask(task, user)
-    const canComplete = can(user, 'assignTasks') || isProjectTaskManager
+    const isTaskCreator = task.createdBy.toString() === user._id.toString()
+    const canComplete = can(user, 'assignTasks') || isProjectTaskManager || isTaskCreator
     const isAssignee = task.assignedTo.some(a => a.toString() === user._id.toString())
-    if (!isManager && !isAssignee && !isProjectTaskManager && !isProjectMember) return res.status(403).json({ success: false, message: 'Access denied' })
+    if (!isManager && !isAssignee && !isProjectTaskManager && !isProjectMember && !isTaskCreator) return res.status(403).json({ success: false, message: 'Access denied' })
 
     const { status, title, description, priority, dueDate, estimatedHours, loggedHours, project, labels } = req.body
 
