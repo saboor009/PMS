@@ -218,7 +218,8 @@ export const addAssignee = async (req, res, next) => {
     const task = await Task.findOne({ _id: req.params.id, isDeleted: false })
     if (!task) return res.status(404).json({ success: false, message: 'Task not found' })
     const managedProject = await getManagedProject(task.project, req.user)
-    if (!can(req.user, 'assignTasks') && !managedProject) {
+    const isTaskCreator = task.createdBy?.toString() === req.user._id.toString()
+    if (!can(req.user, 'assignTasks') && !managedProject && !isTaskCreator) {
       return res.status(403).json({ success: false, message: 'You do not have permission to assign tasks' })
     }
     if (!task.assignedTo.some(assignee => assignee.toString() === userId.toString())) task.assignedTo.push(userId)
@@ -234,7 +235,8 @@ export const removeAssignee = async (req, res, next) => {
   try {
     const task = await Task.findOne({ _id: req.params.id, isDeleted: false })
     if (!task) return res.status(404).json({ success: false, message: 'Task not found' })
-    if (!can(req.user, 'assignTasks') && !await canManageProjectTask(task, req.user)) {
+    const isTaskCreator = task.createdBy?.toString() === req.user._id.toString()
+    if (!can(req.user, 'assignTasks') && !await canManageProjectTask(task, req.user) && !isTaskCreator) {
       return res.status(403).json({ success: false, message: 'You do not have permission to assign tasks' })
     }
     task.assignedTo = task.assignedTo.filter(a => a.toString() !== req.params.userId)

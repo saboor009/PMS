@@ -316,10 +316,11 @@ export default function TaskDetail() {
   const projectMembers = getProjectMembers()
   const currentProject = projects.find(project => project._id === task.project?._id)
   const isProjectManager = currentProject?.owner?._id === user?._id
+  const isTaskCreator = task.createdBy?._id === user?._id
   const canCompleteTasks = can(user, 'assignTasks') || isProjectManager
-  const canAssignTasks = can(user, 'assignTasks') || isProjectManager
+  const canAssignTasks = can(user, 'assignTasks') || isProjectManager || isTaskCreator
   const canDeleteTasks = can(user, 'deleteTasks') || isProjectManager
-  const canEditTaskDetails = can(user, 'assignTasks') || isProjectManager || task.createdBy?._id === user?._id
+  const canEditTaskDetails = can(user, 'assignTasks') || isProjectManager || isTaskCreator
   const assigneePool = isProjectManager && projectMembers.length ? projectMembers : users
   const availableAssignees = assigneePool.filter(member => !(task.assignedTo || []).some(existing => existing._id === member._id))
   const mentionQuery = getMentionQuery()
